@@ -1,0 +1,5400 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0d12">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="GeoSynth">
+<meta name="description" content="Endless procedural synth music, seeded by your GPS position.">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="apple-touch-icon.png">
+<title>GeoSynth</title>
+<style>
+:root {
+  --bg: #0b0d12;
+  --panel: #141821;
+  --panel-2: #1b2130;
+  --line: #262d3d;
+  --text: #e8ecf5;
+  --dim: #8b95ab;
+  --accent: hsl(var(--hue, 190) 85% 60%);
+  --accent-dim: hsl(var(--hue, 190) 60% 28%);
+  --radius: 14px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-text-size-adjust: 100%;
+}
+
+#app {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: max(16px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom));
+}
+
+header h1 { margin: 8px 0 0; font-size: 1.6rem; letter-spacing: 0.02em; }
+.tag { margin: 2px 0 16px; color: var(--dim); }
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px;
+  margin-bottom: 12px;
+}
+.card h2 { margin: 0 0 10px; font-size: 0.8rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--dim); }
+
+.hint, .note { color: var(--dim); font-size: 0.9rem; margin: 8px 0; }
+.note:empty { display: none; }
+
+button, select, input[type="text"], input:not([type]), input[inputmode] {
+  font: inherit;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  min-height: 44px;
+  padding: 8px 12px;
+}
+button { cursor: pointer; }
+button:active { transform: translateY(1px); }
+button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+button.primary {
+  background: var(--accent);
+  color: #05080c;
+  border-color: transparent;
+  font-weight: 650;
+}
+#startBtn { width: 100%; min-height: 54px; font-size: 1.1rem; margin-top: 6px; }
+
+.row { display: flex; gap: 10px; align-items: end; flex-wrap: wrap; margin-top: 10px; }
+label { display: block; font-size: 0.85rem; color: var(--dim); }
+label input, label select { display: block; width: 100%; margin-top: 4px; }
+.row label { flex: 1 1 110px; }
+.vol { flex: 1 1 160px; }
+.vol input { padding: 0; }
+.check { display: flex; gap: 10px; align-items: center; margin-top: 12px; color: var(--text); font-size: 0.9rem; }
+.check input { width: 22px; height: 22px; margin: 0; min-height: 0; flex: none; }
+
+#viz { width: 100%; height: 120px; display: block; border-radius: var(--radius); background: #070910; margin-bottom: 12px; border: 1px solid var(--line); }
+
+.now-main { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.big { font-size: 1.9rem; font-weight: 700; color: var(--accent); }
+.sub { color: var(--dim); text-align: right; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.chips button, .chips span {
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  padding: 6px 14px;
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  color: var(--text);
+  font-size: 0.9rem;
+}
+.chips button[aria-pressed="true"] { background: var(--accent-dim); border-color: var(--accent); }
+.chips.small span { min-height: 0; padding: 2px 10px; font-size: 0.78rem; color: var(--dim); transition: all 0.4s; }
+.chips.small span.on { color: #05080c; background: var(--accent); border-color: transparent; }
+
+.seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 10px; }
+.seg button[aria-checked="true"] { background: var(--accent-dim); border-color: var(--accent); }
+
+/* Banner: is a live GPS position in use? Text and dot shape carry the meaning, colour only reinforces it. */
+.banner { display: flex; align-items: center; gap: 12px; margin: 0 0 14px; padding: 10px 14px;
+  border-radius: var(--radius); border: 1px solid var(--line); background: var(--panel); }
+.banner-text b { display: block; font-weight: 650; }
+.banner-text small { display: block; color: var(--dim); font-size: 0.82rem; line-height: 1.3; }
+.banner-text small:empty { display: none; }
+.banner .dot { flex: none; width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--dim); background: transparent; }
+.banner[data-gps="live"] { border-color: #2f8f5b; background: #10241b; }
+.banner[data-gps="live"] .dot { border-color: #3ddc84; background: #3ddc84; }
+.banner[data-gps="wait"] { border-color: #a8801f; background: #241d0d; }
+.banner[data-gps="wait"] .dot { border-color: #f0b429; background: linear-gradient(90deg, #f0b429 50%, transparent 50%); animation: blink 1.4s ease-in-out infinite; }
+@keyframes blink { 50% { opacity: 0.35; } }
+
+#speedText { margin-top: 10px; }
+.bpm-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.big-num { font-size: 1.6rem; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; }
+.slider { width: 100%; margin: 10px 0 2px; padding: 0; min-height: 36px; accent-color: var(--accent); }
+
+.mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.88rem; }
+.dim { color: var(--dim); }
+[hidden] { display: none !important; }
+
+footer { text-align: center; color: var(--dim); font-size: 0.75rem; padding-top: 8px; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
+
+</style>
+</head>
+<body>
+<main id="app">
+    <header>
+      <h1>GeoSynth</h1>
+      <p class="tag">Endless synth music, seeded by where you are.</p>
+      <div id="posBanner" class="banner" data-gps="off" role="status" aria-live="polite">
+        <span class="dot" aria-hidden="true"></span>
+        <span class="banner-text">
+          <b id="bannerTitle">Not using GPS</b>
+          <small id="bannerDetail"></small>
+        </span>
+      </div>
+    </header>
+
+    <section id="start" class="card">
+      <p class="hint">Your position picks the style, key and tempo (about 10 km grid) and the melodies
+        (about 110 m grid). Same place, same music. Everything runs on this device: coordinates are never sent anywhere.</p>
+      <button id="startBtn" class="primary" type="button">Start listening</button>
+      <p id="startNote" class="note" role="status"></p>
+    </section>
+
+    <section id="player" hidden>
+      <canvas id="viz" width="640" height="160" aria-hidden="true"></canvas>
+
+      <div class="card now">
+        <div class="now-main">
+          <div id="styleName" class="big">-</div>
+          <div id="keyInfo" class="sub">-</div>
+        </div>
+        <div id="layers" class="chips small" aria-label="Active layers">
+          <span data-layer="pad">pad</span>
+          <span data-layer="bass">bass</span>
+          <span data-layer="arp">arp</span>
+          <span data-layer="lead">lead</span>
+          <span data-layer="drums">drums</span>
+        </div>
+        <div class="row">
+          <button id="playBtn" type="button" class="primary">Pause</button>
+          <label class="vol">Volume
+            <input id="volume" type="range" min="0" max="1" step="0.01" value="0.8">
+          </label>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Place</h2>
+        <div class="seg" id="source" role="radiogroup" aria-label="Position source">
+          <button type="button" role="radio" data-src="gps" aria-checked="true">GPS</button>
+          <button type="button" role="radio" data-src="manual" aria-checked="false">Manual</button>
+          <button type="button" role="radio" data-src="demo" aria-checked="false">Demo walk</button>
+        </div>
+        <div id="posText" class="mono">waiting for a fix...</div>
+        <div id="cellText" class="mono dim"></div>
+
+        <div id="manualPanel" hidden>
+          <div class="row">
+            <label>Lat <input id="latIn" inputmode="decimal" value="47.3769"></label>
+            <label>Lon <input id="lonIn" inputmode="decimal" value="8.5417"></label>
+            <button id="applyPos" type="button">Go</button>
+          </div>
+          <div id="presets" class="chips"></div>
+        </div>
+
+        <div id="demoPanel" hidden>
+          <label>Speed (tempo stops rising at 100 km/h)
+            <select id="demoSpeed">
+              <option value="8">Cycle (29 km/h, new spot every ~14 s)</option>
+              <option value="30">Drive (108 km/h, new spot every ~4 s)</option>
+              <option value="150" selected>Fast (540 km/h)</option>
+              <option value="2500">Flight (9000 km/h, new style every ~4 s)</option>
+            </select>
+          </label>
+        </div>
+
+        <label class="check"><input id="hold" type="checkbox"> Hold this place (ignore movement)</label>
+      </div>
+
+      <div class="card">
+        <h2>Tempo</h2>
+        <div class="bpm-head"><span id="bpmOut" class="big-num">- bpm</span><span id="bpmMode" class="dim">automatic</span></div>
+        <input id="bpmSlider" class="slider" type="range" min="40" max="220" step="1" value="120" aria-label="Tempo in beats per minute">
+        <label class="check"><input id="bpmManual" type="checkbox"> Set the tempo by hand (moving the slider turns this on)</label>
+        <div id="speedText" class="mono dim"></div>
+        <label class="check"><input id="tempoFollow" type="checkbox" checked> Tempo follows how fast the position changes (full tempo at 100 km/h)</label>
+      </div>
+
+      <div class="card">
+        <h2>Style</h2>
+        <div id="styleChips" class="chips"></div>
+        <p class="note">Auto lets the location choose among the ten styles.</p>
+      </div>
+
+      <div class="card">
+        <h2>Lead instrument</h2>
+        <div id="leadChips" class="chips"></div>
+        <p class="note">Auto uses the style's own lead (Neon and Smoke feature a saxophone).</p>
+      </div>
+
+      <div class="card">
+        <h2>Options</h2>
+        <label class="check"><input id="wake" type="checkbox" checked> Keep the screen on (GPS stops when the page is hidden)</label>
+        <label>Audio route
+          <select id="route">
+            <option value="element">Media player (keeps playing with screen off, Android)</option>
+            <option value="direct">Direct (Web Audio only)</option>
+          </select>
+        </label>
+        <p id="status" class="note" role="status"></p>
+      </div>
+    </section>
+
+    <footer>
+      <span id="version">v1</span>
+    </footer>
+  </main>
+
+  <audio id="sink" playsinline></audio>
+<script type="text/plain" id="worklet-src">
+// GENERATED by build.mjs - do not edit. Source: engine/*.js + worklet.js
+(function () {
+"use strict";
+
+/* ---- engine/rng.js ---- */
+// Deterministic integer hashing and PRNG.
+// Everything here is 32-bit integer math (Math.imul), so the same seed gives
+// the same sequence on every JS engine. No Math.random anywhere in the engine.
+
+function mix32(x) {
+  x = x >>> 0;
+  x = Math.imul(x ^ (x >>> 16), 0x85ebca6b);
+  x = Math.imul(x ^ (x >>> 13), 0xc2b2ae35);
+  return (x ^ (x >>> 16)) >>> 0;
+}
+
+// Hash two signed 32-bit ints plus a salt into one u32.
+function hash3(a, b, salt) {
+  let h = mix32(salt ^ 0x9e3779b9);
+  h = mix32(h ^ mix32(a | 0));
+  h = mix32(h ^ Math.imul(mix32(b | 0), 0x27d4eb2f));
+  return h >>> 0;
+}
+
+// sfc32: small, fast, good quality.
+class Rng {
+  constructor(seed) {
+    this.reseed(seed);
+  }
+
+  reseed(seed) {
+    const s = seed >>> 0;
+    this.a = mix32(s ^ 0x243f6a88);
+    this.b = mix32(s ^ 0x85a308d3);
+    this.c = mix32(s ^ 0x13198a2e);
+    this.d = 1;
+    for (let i = 0; i < 12; i++) this.next();
+  }
+
+  next() {
+    const t = (((this.a + this.b) | 0) + this.d) | 0;
+    this.d = (this.d + 1) | 0;
+    this.a = this.b ^ (this.b >>> 9);
+    this.b = (this.c + (this.c << 3)) | 0;
+    this.c = (this.c << 21) | (this.c >>> 11);
+    this.c = (this.c + t) | 0;
+    return t >>> 0;
+  }
+
+  // Uniform integer in [0, n). Exact for n < 2^21.
+  below(n) {
+    return Math.floor((this.next() / 4294967296) * n);
+  }
+
+  // Uniform float in [0, 1).
+  float() {
+    return this.next() / 4294967296;
+  }
+
+  // True with probability p (0..1).
+  chance(p) {
+    return this.float() < p;
+  }
+
+  // Integer in [lo, hi] inclusive.
+  range(lo, hi) {
+    return lo + this.below(hi - lo + 1);
+  }
+
+  pick(arr) {
+    return arr[this.below(arr.length)];
+  }
+
+  // Weighted pick: weights is an array of non-negative numbers.
+  weighted(weights) {
+    let total = 0;
+    for (let i = 0; i < weights.length; i++) total += weights[i];
+    let r = this.float() * total;
+    for (let i = 0; i < weights.length; i++) {
+      r -= weights[i];
+      if (r < 0) return i;
+    }
+    return weights.length - 1;
+  }
+}
+
+// Derive an independent stream from a base seed and a salt.
+function stream(seed, salt) {
+  return new Rng(mix32((seed >>> 0) ^ Math.imul(salt | 0, 0x9e3779b1)));
+}
+
+
+/* ---- engine/theory.js ---- */
+// Music theory helpers and the style table. Pure integer/array logic, no audio.
+
+const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+
+const SCALES = {
+  ionian: [0, 2, 4, 5, 7, 9, 11],
+  dorian: [0, 2, 3, 5, 7, 9, 10],
+  phrygian: [0, 1, 3, 5, 7, 8, 10],
+  lydian: [0, 2, 4, 6, 7, 9, 11],
+  mixolydian: [0, 2, 4, 5, 7, 9, 10],
+  aeolian: [0, 2, 3, 5, 7, 8, 10],
+  harmonicMinor: [0, 2, 3, 5, 7, 8, 11],
+};
+
+const PENT = {
+  major: [0, 2, 4, 7, 9],
+  minor: [0, 3, 5, 7, 10],
+};
+
+// Which chord-transition matrix suits each mode, and which degrees give it
+// its colour (extra weight in the Markov chain).
+const SCALE_INFO = {
+  ionian: { mat: 'major', favor: {} },
+  lydian: { mat: 'major', favor: { 1: 2.2 } },
+  mixolydian: { mat: 'major', favor: { 6: 2.0 } },
+  dorian: { mat: 'minor', favor: { 3: 1.8 } },
+  aeolian: { mat: 'minor', favor: {} },
+  phrygian: { mat: 'minor', favor: { 1: 2.6 } },
+  harmonicMinor: { mat: 'minor', favor: { 4: 1.8 } },
+};
+
+// Row = from-degree, column = to-degree (0..6).
+const MATRIX = {
+  major: [
+    [0.0, 0.08, 0.1, 0.25, 0.3, 0.22, 0.05],
+    [0.05, 0.0, 0.05, 0.1, 0.5, 0.1, 0.2],
+    [0.1, 0.1, 0.0, 0.3, 0.1, 0.4, 0.0],
+    [0.25, 0.1, 0.05, 0.0, 0.35, 0.15, 0.1],
+    [0.5, 0.05, 0.05, 0.1, 0.0, 0.25, 0.05],
+    [0.1, 0.25, 0.05, 0.35, 0.2, 0.0, 0.05],
+    [0.6, 0.05, 0.1, 0.05, 0.1, 0.1, 0.0],
+  ],
+  minor: [
+    [0.0, 0.03, 0.12, 0.25, 0.15, 0.25, 0.2],
+    [0.1, 0.0, 0.1, 0.1, 0.4, 0.1, 0.2],
+    [0.1, 0.05, 0.0, 0.2, 0.1, 0.3, 0.25],
+    [0.25, 0.05, 0.1, 0.0, 0.2, 0.15, 0.25],
+    [0.4, 0.02, 0.08, 0.1, 0.0, 0.3, 0.1],
+    [0.1, 0.05, 0.3, 0.2, 0.1, 0.0, 0.25],
+    [0.35, 0.03, 0.25, 0.1, 0.1, 0.17, 0.0],
+  ],
+};
+
+// ---------------------------------------------------------------------------
+// Scale helpers
+
+// Semitone offset of scale index `idx` (any integer, may be negative or
+// beyond the scale length; wraps by octaves).
+function scaleNote(scale, idx) {
+  const n = scale.length;
+  const oct = Math.floor(idx / n);
+  const i = idx - oct * n;
+  return scale[i] + 12 * oct;
+}
+
+// Index in `scale` (extended across octaves) whose pitch is nearest to
+// `semi` semitones above the key root.
+function nearestIdx(scale, semi) {
+  const n = scale.length;
+  let oct = Math.floor(semi / 12);
+  let best = 0;
+  let bestD = 1e9;
+  for (let o = oct - 1; o <= oct + 1; o++) {
+    for (let i = 0; i < n; i++) {
+      const d = Math.abs(scale[i] + 12 * o - semi);
+      if (d < bestD) {
+        bestD = d;
+        best = o * n + i;
+      }
+    }
+  }
+  return best;
+}
+
+// Chord tones (semitones above key root) for scale degree `d` (0..6) of a
+// 7-note scale. opts: seventh (bool), sus ('2' | '4' | null).
+function chordTones(scale, d, opts) {
+  const o = opts || {};
+  const third = o.sus === '2' ? d + 1 : o.sus === '4' ? d + 3 : d + 2;
+  const idxs = [d, third, d + 4];
+  if (o.seventh) idxs.push(d + 6);
+  return idxs.map((i) => scaleNote(scale, i));
+}
+
+// Fold a pitch into [lo, lo + 12).
+function fold(midi, lo) {
+  while (midi < lo) midi += 12;
+  while (midi >= lo + 12) midi -= 12;
+  return midi;
+}
+
+// Markov progression of `len` degrees.
+function makeProgression(rng, scaleName, len, stay, startDegrees) {
+  const info = SCALE_INFO[scaleName];
+  const mat = MATRIX[info.mat];
+  const prog = [];
+  let cur = rng.pick(startDegrees);
+  prog.push(cur);
+  while (prog.length < len) {
+    if (rng.chance(stay)) {
+      prog.push(cur);
+      continue;
+    }
+    const w = mat[cur].map((x, j) => x * (info.favor[j] || 1));
+    cur = rng.weighted(w);
+    prog.push(cur);
+  }
+  return prog;
+}
+
+// Euclidean rhythm: k hits spread over n steps. Returns array of 0/1.
+function euclid(k, n, rot) {
+  const out = new Array(n).fill(0);
+  if (k <= 0) return out;
+  let acc = 0;
+  for (let i = 0; i < n; i++) {
+    acc += k;
+    if (acc >= n) {
+      acc -= n;
+      out[(i + (rot || 0)) % n] = 1;
+    }
+  }
+  return out;
+}
+
+// Parse a drum pattern string like "x...x...x...x..." into step indices.
+function pat(str) {
+  const out = [];
+  for (let i = 0; i < str.length; i++) if (str[i] === 'x') out.push(i);
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Styles
+
+const STYLES = [
+  {
+    id: 'drift',
+    trim: 0.7,
+    name: 'Drift',
+    blurb: 'slow ambient pads, distant bells',
+    bpm: [54, 70],
+    scales: ['lydian', 'ionian', 'dorian'],
+    pent: true,
+    chordBars: 2,
+    stay: 0.25,
+    sevenths: 0.5,
+    sus: 0.35,
+    starts: [0, 0, 5, 3],
+    patches: { pad: 'padSoft', bass: 'bassSub', arp: 'arpBell', lead: 'leadFlute' },
+    layerProb: { pad: 1.0, bass: 0.6, arp: 0.25, lead: 0.55, drums: 0.0 },
+    bass: { mode: 'drone' },
+    arp: { mode: 'random', rate: 4, octaves: 2, vel: 0.45, gate: 1.6 },
+    lead: { density: 0.16, vel: 0.55, minGap: 3 },
+    drums: null,
+    swing: 0,
+    fx: { delayBeats: 0.75, delayFb: 0.5, delayMix: 0.3, reverbMix: 0.42, reverbSize: 0.92 },
+    bright: [0.3, 0.6],
+  },
+  {
+    id: 'neon',
+    trim: 1.33,
+    name: 'Neon',
+    blurb: 'synthwave: pulsing bass, arps, gated snare',
+    bpm: [96, 116],
+    scales: ['aeolian', 'dorian', 'aeolian'],
+    pent: false,
+    chordBars: 1,
+    stay: 0.1,
+    sevenths: 0.25,
+    sus: 0.05,
+    starts: [0, 0, 5],
+    patches: { pad: 'padSaw', bass: 'bassSaw', arp: 'arpSaw', lead: 'leadSax' },
+    layerProb: { pad: 0.9, bass: 0.95, arp: 0.8, lead: 0.55, drums: 0.9 },
+    bass: { mode: 'pulse' },
+    arp: { mode: 'updown', rate: 2, octaves: 2, vel: 0.5, gate: 0.85 },
+    lead: { density: 0.3, vel: 0.7, minGap: 1, lo: 58, hi: 82 },
+    drums: { kick: 'x.......x.......', snare: '....x.......x...', hat: 'eighth', ghost: 0.1, level: 0.9 },
+    swing: 0,
+    fx: { delayBeats: 0.75, delayFb: 0.38, delayMix: 0.22, reverbMix: 0.22, reverbSize: 0.78 },
+    bright: [0.5, 0.9],
+  },
+  {
+    id: 'pulse',
+    trim: 1.3,
+    name: 'Pulse',
+    blurb: 'driving house: four on the floor, offbeat bass',
+    bpm: [122, 134],
+    scales: ['phrygian', 'aeolian', 'harmonicMinor'],
+    pent: false,
+    chordBars: 2,
+    stay: 0.45,
+    sevenths: 0.1,
+    sus: 0.0,
+    starts: [0, 0, 0, 1],
+    patches: { pad: 'padDark', bass: 'bassPulse', arp: 'arpPulse', lead: 'leadPulse' },
+    layerProb: { pad: 0.6, bass: 0.95, arp: 0.85, lead: 0.25, drums: 1.0 },
+    bass: { mode: 'offbeat' },
+    arp: { mode: 'seq', rate: 1, octaves: 2, vel: 0.42, gate: 0.6 },
+    lead: { density: 0.18, vel: 0.6, minGap: 2 },
+    drums: { kick: 'x...x...x...x...', snare: '....x.......x...', hat: 'offbeat', ghost: 0.05, level: 1.0 },
+    swing: 0.02,
+    fx: { delayBeats: 0.75, delayFb: 0.45, delayMix: 0.2, reverbMix: 0.16, reverbSize: 0.7 },
+    bright: [0.35, 0.95],
+  },
+  {
+    id: 'glass',
+    trim: 0.8,
+    name: 'Glass',
+    blurb: 'dreamy pentatonic plucks over soft pads',
+    bpm: [76, 92],
+    scales: ['ionian', 'lydian', 'mixolydian'],
+    pent: true,
+    chordBars: 1,
+    stay: 0.15,
+    sevenths: 0.35,
+    sus: 0.2,
+    starts: [0, 3, 0, 5],
+    patches: { pad: 'padSoft', bass: 'bassSub', arp: 'arpPluck', lead: 'leadVibes' },
+    layerProb: { pad: 0.9, bass: 0.7, arp: 0.95, lead: 0.5, drums: 0.4 },
+    bass: { mode: 'sub' },
+    arp: { mode: 'random', rate: 2, octaves: 3, vel: 0.5, gate: 1.3 },
+    lead: { density: 0.2, vel: 0.6, minGap: 2 },
+    drums: { kick: 'x.......x.......', snare: null, hat: 'sparse', ghost: 0.0, level: 0.5 },
+    swing: 0.05,
+    fx: { delayBeats: 0.75, delayFb: 0.55, delayMix: 0.35, reverbMix: 0.38, reverbSize: 0.88 },
+    bright: [0.45, 0.8],
+  },
+  {
+    id: 'abyss',
+    trim: 0.72,
+    name: 'Abyss',
+    blurb: 'dark drones, sparse low tones',
+    bpm: [50, 64],
+    scales: ['phrygian', 'harmonicMinor', 'aeolian'],
+    pent: false,
+    chordBars: 2,
+    stay: 0.5,
+    sevenths: 0.3,
+    sus: 0.3,
+    starts: [0, 0, 1],
+    patches: { pad: 'padChoir', bass: 'bassSub', arp: 'arpBell', lead: 'leadFM' },
+    layerProb: { pad: 1.0, bass: 0.9, arp: 0.15, lead: 0.5, drums: 0.0 },
+    bass: { mode: 'drone' },
+    arp: { mode: 'random', rate: 4, octaves: 2, vel: 0.35, gate: 2.0 },
+    lead: { density: 0.1, vel: 0.5, minGap: 4 },
+    drums: null,
+    swing: 0,
+    fx: { delayBeats: 1.5, delayFb: 0.55, delayMix: 0.28, reverbMix: 0.5, reverbSize: 0.96 },
+    bright: [0.2, 0.5],
+  },
+  {
+    id: 'arcade',
+    trim: 1.36,
+    name: 'Arcade',
+    blurb: 'chiptune: pulse waves and fast arps',
+    bpm: [132, 150],
+    scales: ['mixolydian', 'ionian', 'dorian'],
+    pent: false,
+    chordBars: 1,
+    stay: 0.1,
+    sevenths: 0.0,
+    sus: 0.0,
+    starts: [0, 0, 5, 3],
+    patches: { pad: 'padPulse', bass: 'bassPulse', arp: 'arpPulse', lead: 'leadPulse' },
+    layerProb: { pad: 0.3, bass: 0.95, arp: 0.9, lead: 0.85, drums: 0.9 },
+    bass: { mode: 'octave' },
+    arp: { mode: 'up', rate: 1, octaves: 2, vel: 0.4, gate: 0.5 },
+    lead: { density: 0.45, vel: 0.65, minGap: 1 },
+    drums: { kick: 'x.....x.x.......', snare: '....x.......x...', hat: 'eighth', ghost: 0.15, level: 0.8 },
+    swing: 0,
+    fx: { delayBeats: 0.5, delayFb: 0.25, delayMix: 0.12, reverbMix: 0.08, reverbSize: 0.5 },
+    bright: [0.7, 1.0],
+  },
+  {
+    id: 'chill',
+    trim: 0.83,
+    name: 'Chill',
+    blurb: 'lo-fi chillwave: seventh chords, swung beat',
+    bpm: [78, 92],
+    scales: ['dorian', 'ionian', 'mixolydian'],
+    pent: true,
+    chordBars: 1,
+    stay: 0.1,
+    sevenths: 0.85,
+    sus: 0.1,
+    starts: [0, 1, 3, 5],
+    patches: { pad: 'padFM', bass: 'bassSub', arp: 'arpPluck', lead: 'leadClarinet' },
+    layerProb: { pad: 1.0, bass: 0.9, arp: 0.35, lead: 0.7, drums: 0.9 },
+    bass: { mode: 'walk' },
+    arp: { mode: 'updown', rate: 2, octaves: 2, vel: 0.35, gate: 1.0 },
+    lead: { density: 0.22, vel: 0.6, minGap: 2 },
+    drums: { kick: 'x.....x...x.....', snare: '....x.......x...', hat: 'eighth', ghost: 0.2, level: 0.75 },
+    swing: 0.18,
+    fx: { delayBeats: 0.75, delayFb: 0.4, delayMix: 0.25, reverbMix: 0.3, reverbSize: 0.82 },
+    bright: [0.3, 0.65],
+  },
+  {
+    id: 'epic',
+    trim: 1.34,
+    name: 'Epic',
+    blurb: 'cinematic: big saw pads, rising arps, toms',
+    bpm: [70, 90],
+    scales: ['harmonicMinor', 'aeolian', 'dorian'],
+    pent: false,
+    chordBars: 1,
+    stay: 0.1,
+    sevenths: 0.15,
+    sus: 0.05,
+    starts: [0, 0, 5],
+    patches: { pad: 'padStrings', bass: 'bassSaw', arp: 'arpSaw', lead: 'leadTrumpet' },
+    layerProb: { pad: 1.0, bass: 0.85, arp: 0.7, lead: 0.65, drums: 0.55 },
+    bass: { mode: 'pulse' },
+    arp: { mode: 'up', rate: 2, octaves: 3, vel: 0.4, gate: 0.9 },
+    lead: { density: 0.14, vel: 0.75, minGap: 4 },
+    drums: { kick: 'x.......x.x.....', snare: '............x...', hat: null, ghost: 0.0, level: 0.9 },
+    swing: 0,
+    fx: { delayBeats: 0.75, delayFb: 0.4, delayMix: 0.2, reverbMix: 0.4, reverbSize: 0.92 },
+    bright: [0.4, 0.85],
+  },
+  {
+    id: 'smoke',
+    trim: 1.67,
+    name: 'Smoke',
+    blurb: 'late-night jazz: sax, walking bass, swung brushes',
+    bpm: [68, 94],
+    scales: ['dorian', 'mixolydian', 'aeolian'],
+    pent: false,
+    chordBars: 1,
+    stay: 0.05,
+    sevenths: 0.95,
+    sus: 0.1,
+    starts: [0, 1, 3, 5],
+    patches: { pad: 'padFM', bass: 'bassUpright', arp: 'arpVibes', lead: 'leadSax' },
+    layerProb: { pad: 0.95, bass: 0.95, arp: 0.25, lead: 0.95, drums: 0.9 },
+    bass: { mode: 'walk' },
+    arp: { mode: 'updown', rate: 2, octaves: 2, vel: 0.3, gate: 1.1 },
+    lead: { density: 0.3, vel: 0.7, minGap: 1, lo: 55, hi: 80 },
+    drums: { kick: 'x.......x.......', snare: '....x.......x...', hat: 'eighth', ghost: 0.25, level: 0.45 },
+    swing: 0.05,
+    swing8: 0.6,
+    fx: { delayBeats: 0.75, delayFb: 0.3, delayMix: 0.15, reverbMix: 0.3, reverbSize: 0.8 },
+    bright: [0.4, 0.75],
+  },
+  {
+    id: 'techno',
+    trim: 1.25,
+    name: 'Techno',
+    blurb: 'hard techno: kick on every beat, acid bass, 16th hats, stabs',
+    bpm: [128, 146],
+    scales: ['phrygian', 'aeolian', 'phrygian'],
+    pent: false,
+    chordBars: 2,
+    stay: 0.75, // mostly sits on the root: hypnotic, not melodic
+    sevenths: 0.0,
+    sus: 0.0,
+    starts: [0, 0, 0],
+    patches: { pad: 'padDark', bass: 'bassAcid', arp: 'arpStab', lead: 'leadSaw' },
+    layerProb: { pad: 0.5, bass: 1.0, arp: 0.8, lead: 0.2, drums: 1.0 },
+    introDrums: true,
+    bass: { mode: 'acid' },
+    arp: { mode: 'seq', rate: 2, octaves: 2, vel: 0.4, gate: 0.5 },
+    lead: { density: 0.12, vel: 0.6, minGap: 2, lo: 60, hi: 84 },
+    drums: { kick: 'x...x...x...x...', snare: '....x.......x...', hat: 'sixteenth', ghost: 0.0, level: 1.0 },
+    swing: 0,
+    fx: { delayBeats: 0.75, delayFb: 0.4, delayMix: 0.18, reverbMix: 0.14, reverbSize: 0.65 },
+    bright: [0.45, 1.0],
+  },
+];
+
+
+/* ---- engine/composer.js ---- */
+// Procedural composer. Pure function of (seed, bar count): no audio, no
+// floating-point state that depends on the platform beyond IEEE basics, and
+// every random draw comes from a seeded stream, so the same seed always
+// produces the same music.
+//
+// nextBar() returns a plan for one bar (16 sixteenth-note steps):
+//   steps[s] = array of note events { voice, note, vel, len }
+// voices: pad, bass, arp, lead, kick, snare, hat, tom
+
+
+const STEPS_PER_BAR = 16;
+const MAX_BPM_STEP = 12;
+// At full speed (100 km/h) every style reaches at least this tempo, so a slow
+// style like Abyss does not top out at 70 bpm.
+const FOLLOW_TOP_BPM = 160;
+const BPM_MIN = 40;
+const BPM_MAX = 220;
+const METER = [1, 0.15, 0.3, 0.15, 0.6, 0.15, 0.3, 0.15, 0.8, 0.15, 0.3, 0.15, 0.6, 0.15, 0.3, 0.15];
+const LAYERS = ['pad', 'bass', 'arp', 'lead', 'drums'];
+
+class Composer {
+  constructor() {
+    this.pending = null;
+    this.s = null;
+    this.barCount = 0;
+    this.leadOv = null;
+    this.tempoFactor = null;
+    this.tempoOv = null;
+    this.curBpm = null;
+  }
+
+  // seed: { style: -1 (auto) | index, coarse: u32, fine: u32 }
+  setSeed(seed) {
+    this.pending = { style: seed.style, coarse: seed.coarse >>> 0, fine: seed.fine >>> 0 };
+  }
+
+  hasPending() {
+    return this.pending !== null;
+  }
+
+  // Tempo follows movement: factor 0..1 maps across the style's tempo range
+  // (a little beyond it at both ends). null = use the tempo from the seed.
+  // Applied gradually at bar lines (see nextBar).
+  setTempoFactor(f) {
+    this.tempoFactor = f === null || f === undefined ? null : Math.max(0, Math.min(1, f));
+  }
+
+  // Manual tempo (BPM slider): wins over movement and the seed, and applies at
+  // once rather than being slewed. null returns to movement/seed tempo.
+  setTempoOverride(bpm) {
+    if (bpm === null || bpm === undefined || !Number.isFinite(bpm)) {
+      this.tempoOv = null;
+      return;
+    }
+    this.tempoOv = Math.max(BPM_MIN, Math.min(BPM_MAX, Math.round(bpm)));
+    this.curBpm = this.tempoOv;
+  }
+
+  // Force the lead line on (the user picked a lead instrument) and keep it in
+  // that instrument's range. ov = { lo, hi } midi notes, or null for the
+  // style's own arrangement.
+  setLeadOverride(ov) {
+    this.leadOv = ov ? { lo: ov.lo, hi: ov.hi } : null;
+  }
+
+  info() {
+    const s = this.s;
+    if (!s) return null;
+    return {
+      style: s.styleIdx,
+      styleName: s.style.name,
+      key: NOTE_NAMES[s.pc],
+      scale: s.scaleName,
+      bpm: this.curBpm === null ? s.bpm : this.curBpm,
+    };
+  }
+
+  // ---------------------------------------------------------------- latching
+
+  _latch(seed) {
+    const prev = this.s;
+    const styleIdx =
+      seed.style >= 0 && seed.style < STYLES.length
+        ? seed.style
+        : mix32(seed.coarse ^ 0x57) % STYLES.length;
+    const style = STYLES[styleIdx];
+    const full = !prev || prev.styleIdx !== styleIdx || prev.coarse !== seed.coarse;
+    if (full) this.curBpm = null; // new place/style: take its tempo straight away
+
+    const s = {
+      styleIdx,
+      style,
+      coarse: seed.coarse,
+      fine: seed.fine,
+      sectionIdx: 0,
+      barInSection: 0,
+      sectionBars: 0,
+      prog: [0, 0, 0, 0],
+      motifSeed: 1,
+      layers: {},
+      bright: 0.5,
+      densMul: 1,
+      groove: null,
+      seqPat: [],
+      seqGate: [],
+      answer: false,
+      leadMidi: 74,
+      hum: stream(seed.fine, 77),
+    };
+
+    // Key, mode and tempo come from the coarse cell (stable over ~10 km).
+    const kr = stream(seed.coarse, 11);
+    s.pc = kr.below(12);
+    s.scaleName = style.scales[kr.below(style.scales.length)];
+    s.scale = SCALES[s.scaleName];
+    if (style.pent && s.scaleName !== 'harmonicMinor') {
+      const major = ['ionian', 'lydian', 'mixolydian'].includes(s.scaleName);
+      s.melScale = major ? PENT.major : PENT.minor;
+    } else {
+      s.melScale = s.scale;
+    }
+    s.bpm = style.bpm[0] + kr.below(style.bpm[1] - style.bpm[0] + 1);
+
+    s.sectionBars = 8 * style.chordBars;
+    this.s = s;
+    this._newSection(full);
+  }
+
+  _newSection(intro) {
+    const s = this.s;
+    const style = s.style;
+    const secSeed = mix32((s.fine ^ Math.imul(s.sectionIdx + 1, 0x9e3779b1)) >>> 0);
+    const r = stream(secSeed, 1);
+
+    // Harmony: keep the last progression 40% of the time so ideas come back.
+    const keepProg = s.sectionIdx > 0 && r.chance(0.4);
+    const pr = stream(secSeed, 2);
+    if (!keepProg) {
+      s.prog = makeProgression(pr, s.scaleName, 4, style.stay, style.starts);
+    }
+    if (!(s.sectionIdx > 0 && r.chance(0.5))) s.motifSeed = stream(secSeed, 3).next();
+    s.answer = r.chance(0.6);
+
+    // Arrangement: which layers play in this section.
+    const layers = {};
+    if (intro) {
+      const cand = ['pad', 'bass', 'arp']
+        .map((n) => [n, style.layerProb[n]])
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 2);
+      for (const n of LAYERS) layers[n] = false;
+      for (const [n] of cand) layers[n] = true;
+      if (style.introDrums) layers.drums = true; // e.g. techno opens with the kick
+    } else {
+      let count = 0;
+      for (const n of LAYERS) {
+        layers[n] = r.chance(style.layerProb[n]);
+        if (layers[n]) count++;
+      }
+      if (count < 2) {
+        const top = LAYERS.map((n) => [n, style.layerProb[n]])
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 2);
+        for (const [n] of top) layers[n] = true;
+      }
+    }
+    if (!style.drums) layers.drums = false;
+    s.layers = layers;
+
+    s.bright = style.bright[0] + r.float() * (style.bright[1] - style.bright[0]);
+    s.densMul = 0.6 + r.float() * 0.8;
+
+    // Drum groove for the whole section.
+    if (style.drums) {
+      const d = style.drums;
+      const kick = style.drums.kick ? pat(d.kick) : [];
+      const gr = stream(secSeed, 4);
+      for (const g of [3, 7, 10, 11, 14, 15]) {
+        if (gr.chance(d.ghost * 0.4) && !kick.includes(g)) kick.push(g);
+      }
+      s.groove = { kick, snare: d.snare ? pat(d.snare) : [] };
+    }
+
+    // Arpeggio "seq" mode pattern.
+    const sr = stream(secSeed, 5);
+    s.seqPat = [];
+    s.seqGate = [];
+    for (let i = 0; i < 16; i++) {
+      s.seqPat.push(sr.below(6));
+      s.seqGate.push(sr.chance(0.78) ? 1 : 0);
+    }
+
+    s.barInSection = 0;
+    s.secSeed = secSeed;
+  }
+
+  // ---------------------------------------------------------------- planning
+
+  nextBar() {
+    if (this.pending) {
+      this._latch(this.pending);
+      this.pending = null;
+      this.barCount = 0;
+    } else if (!this.s) {
+      this._latch({ style: -1, coarse: 1, fine: 1 });
+    }
+    let s = this.s;
+    if (s.barInSection >= s.sectionBars) {
+      s.sectionIdx++;
+      this._newSection(false);
+    }
+
+    const style = s.style;
+
+    // Tempo: from the seed, or following movement speed. Moves at most
+    // MAX_BPM_STEP per bar so changes feel like accelerating, not jumping.
+    let targetBpm = s.bpm;
+    if (this.tempoFactor !== null) {
+      const lo = style.bpm[0] * 0.9;
+      const hi = Math.max(style.bpm[1] * 1.1, FOLLOW_TOP_BPM);
+      targetBpm = Math.round(lo + this.tempoFactor * (hi - lo));
+    }
+    if (this.tempoOv !== null) this.curBpm = this.tempoOv;
+    else if (this.curBpm === null) this.curBpm = targetBpm;
+    else this.curBpm += Math.max(-MAX_BPM_STEP, Math.min(MAX_BPM_STEP, targetBpm - this.curBpm));
+
+    const cb = style.chordBars;
+    const j = s.barInSection;
+    const prog = s.prog;
+    const progLen = 4 * cb;
+    const jj = j % progLen;
+    const chordIdx = Math.floor(jj / cb);
+    const posInChord = jj % cb;
+    const repeat = Math.floor(j / progLen);
+    const nextChordIdx = (chordIdx + (posInChord === cb - 1 ? 1 : 0)) % 4;
+    const degree = prog[chordIdx];
+    const nextDegree = prog[nextChordIdx];
+    const lastBar = j === s.sectionBars - 1;
+
+    const rr = stream(s.secSeed, 200 + j);
+    const opts = {
+      seventh: stream(s.secSeed, 300 + chordIdx).chance(style.sevenths),
+      sus: null,
+    };
+    const susR = stream(s.secSeed, 400 + chordIdx);
+    if (susR.chance(style.sus)) opts.sus = susR.chance(0.5) ? '2' : '4';
+    const tones = chordTones(s.scale, degree, opts);
+
+    const steps = [];
+    for (let i = 0; i < STEPS_PER_BAR; i++) steps.push([]);
+    const L = s.layers;
+    const hum = s.hum;
+
+    // ---- pad
+    if (L.pad && posInChord === 0) {
+      const notes = tones.map((t) => fold(48 + s.pc + t, 55)).sort((a, b) => a - b);
+      if (!L.bass) notes.unshift(fold(48 + s.pc + tones[0], 43));
+      for (const n of notes) {
+        steps[0].push({ voice: 'pad', note: n, vel: 0.5 + hum.float() * 0.08, len: STEPS_PER_BAR * cb });
+      }
+    }
+
+    // ---- bass
+    if (L.bass) this._planBass(steps, s, tones, degree, nextDegree, posInChord, rr, hum);
+
+    // ---- arp
+    if (L.arp) this._planArp(steps, s, tones, j, hum);
+
+    // ---- lead
+    if (L.lead || this.leadOv) this._planLead(steps, s, tones, j, jj, repeat, progLen, cb, lastBar);
+
+    // ---- drums
+    if (L.drums && style.drums) this._planDrums(steps, s, j, lastBar, rr, hum);
+
+    const t = s.sectionBars > 1 ? j / (s.sectionBars - 1) : 0;
+    const plan = {
+      steps,
+      bpm: this.curBpm,
+      swing: style.swing,
+      swing8: style.swing8 || 0,
+      fx: style.fx,
+      patches: style.patches,
+      bright: s.bright * (0.78 + 0.22 * t),
+      bar: this.barCount,
+      section: s.sectionIdx,
+      chordDegree: degree,
+      trim: style.trim || 1,
+      duck: L.drums && style.drums ? 0.4 : 0,
+      layers: { ...L, lead: !!(L.lead || this.leadOv) },
+    };
+    s.barInSection++;
+    this.barCount++;
+    return plan;
+  }
+
+  _planBass(steps, s, tones, degree, nextDegree, posInChord, rr, hum) {
+    const style = s.style;
+    const cb = style.chordBars;
+    const root = fold(36 + s.pc + s.scale[degree], 36);
+    const mode = style.bass.mode;
+    const push = (st, note, vel, len) =>
+      steps[st].push({ voice: 'bass', note, vel: vel * (0.92 + hum.float() * 0.08), len });
+    if (mode === 'sub' || mode === 'drone') {
+      if (posInChord === 0) push(0, root, 0.8, STEPS_PER_BAR * cb - 0.5);
+    } else if (mode === 'pulse') {
+      const fifth = rr.chance(0.3);
+      for (let st = 0; st < 16; st += 2) {
+        const n = st === 14 && fifth ? root + 7 : root;
+        push(st, n, st % 8 === 0 ? 0.85 : 0.65, 1.7);
+      }
+    } else if (mode === 'offbeat') {
+      for (let st = 2; st < 16; st += 4) push(st, root, 0.8, 1.6);
+    } else if (mode === 'octave') {
+      for (let st = 0; st < 16; st += 2) push(st, st % 4 === 2 ? root + 12 : root, 0.7, 1.2);
+    } else if (mode === 'acid') {
+      // 16th-note acid line. The kick owns the beat, so the bass plays the gaps;
+      // the section's random pattern picks which gaps, which note and which
+      // steps are accented (and open the filter wider).
+      const third = fold(36 + s.pc + tones[1], 36);
+      const fifth = fold(36 + s.pc + tones[2], 36);
+      const pick = [root, root, root + 12, third, fifth, root + 12];
+      for (let st = 0; st < 16; st++) {
+        if (st % 4 === 0 || !s.seqGate[st]) continue;
+        const k = s.seqPat[(st * 5 + 3) & 15];
+        push(st, pick[k], k >= 4 ? 0.95 : 0.66, 1.3);
+      }
+    } else if (mode === 'walk') {
+      const nextRoot = fold(36 + s.pc + s.scale[nextDegree], 36);
+      const third = root + (s.scale[(degree + 2) % 7] - s.scale[degree] + 12) % 12;
+      const fifth = root + 7;
+      const approach = nextRoot + (rr.chance(0.5) ? -1 : 1);
+      const seq = [root, rr.chance(0.5) ? third : fifth, fifth, approach];
+      for (let i = 0; i < 4; i++) push(i * 4, seq[i], i === 0 ? 0.85 : 0.65, 3.6);
+    }
+  }
+
+  _planArp(steps, s, tones, j, hum) {
+    const a = s.style.arp;
+    const rate = a.rate;
+    const pool = [];
+    const base = tones.map((t) => fold(48 + s.pc + t, 60)).sort((x, y) => x - y);
+    for (let o = 0; o < a.octaves; o++) for (const n of base) pool.push(n + 12 * o);
+    const N = pool.length;
+    const ar = stream(s.secSeed, 500 + j);
+    for (let st = 0, k = 0; st < 16; st += rate, k++) {
+      // Draw unconditionally so patterns stay in sync when options change.
+      const pick = ar.below(N);
+      const skip = ar.float();
+      let idx;
+      let play = true;
+      switch (a.mode) {
+        case 'up':
+          idx = k % N;
+          break;
+        case 'down':
+          idx = N - 1 - (k % N);
+          break;
+        case 'updown': {
+          const period = Math.max(1, 2 * N - 2);
+          const m = k % period;
+          idx = m < N ? m : period - m;
+          break;
+        }
+        case 'seq':
+          idx = s.seqPat[st] % N;
+          play = s.seqGate[st] === 1;
+          break;
+        default:
+          idx = pick;
+          play = skip > 0.3;
+      }
+      if (!play) continue;
+      const accent = st % 4 === 0 ? 1.12 : 0.92;
+      steps[st].push({
+        voice: 'arp',
+        note: pool[idx],
+        vel: a.vel * accent * (0.9 + hum.float() * 0.1),
+        len: rate * a.gate,
+      });
+    }
+  }
+
+  _planLead(steps, s, tones, j, jj, repeat, progLen, cb, lastBar) {
+    const style = s.style;
+    const key = repeat === 1 && jj === progLen - 1 && s.answer ? 99 : jj % (2 * cb);
+    const r = stream(s.motifSeed, 31 * key + 7);
+    let dens = Math.min(0.9, style.lead.density * s.densMul);
+    if (this.leadOv) dens = Math.max(dens, 0.26);
+    const mel = s.melScale;
+    const origin = 48 + s.pc;
+    const lo = this.leadOv ? this.leadOv.lo : style.lead.lo || 62;
+    const hi = this.leadOv ? this.leadOv.hi : style.lead.hi || 88;
+
+    // Chord tones across the lead register, as midi notes.
+    const ctMidi = [];
+    for (let o = -2; o <= 4; o++) for (const t of tones) ctMidi.push(origin + t + 12 * o);
+    const nearestChordTone = (m) => {
+      let best = ctMidi[0];
+      let bd = 1e9;
+      for (const c of ctMidi) {
+        const d = Math.abs(c - m);
+        if (d < bd) {
+          bd = d;
+          best = c;
+        }
+      }
+      return best;
+    };
+
+    const hits = [];
+    let last = -99;
+    let idx = nearestIdx(mel, s.leadMidi - origin);
+    const deltas = [-3, -2, -2, -1, -1, -1, 0, 1, 1, 1, 2, 2, 3];
+    for (let st = 0; st < 16; st++) {
+      const chance = r.float();
+      const delta = deltas[r.below(deltas.length)];
+      const snap = r.float();
+      const velJ = r.float();
+      const p = Math.min(1, dens * 3.2 * METER[st]);
+      if (chance < p && st - last >= style.lead.minGap) {
+        let m = origin + scaleNote(mel, idx + delta);
+        idx += delta;
+        if (hits.length === 0 || (st % 4 === 0 && snap < 0.65)) {
+          m = nearestChordTone(m);
+          idx = nearestIdx(mel, m - origin);
+        }
+        while (m > hi) {
+          idx -= mel.length;
+          m -= 12;
+        }
+        while (m < lo) {
+          idx += mel.length;
+          m += 12;
+        }
+        hits.push({ st, m, vel: style.lead.vel * (METER[st] > 0.5 ? 1 : 0.85) * (0.88 + velJ * 0.12) });
+        last = st;
+      }
+    }
+    for (let i = 0; i < hits.length; i++) {
+      const h = hits[i];
+      const next = i + 1 < hits.length ? hits[i + 1].st : 16;
+      const len = Math.max(1, Math.min(next - h.st, 8) * 0.92);
+      steps[h.st].push({ voice: 'lead', note: h.m, vel: h.vel, len });
+      s.leadMidi = h.m;
+    }
+  }
+
+  _planDrums(steps, s, j, lastBar, rr, hum) {
+    const d = s.style.drums;
+    const lvl = d.level;
+    const g = s.groove;
+    const add = (st, voice, note, vel, len) =>
+      steps[st].push({ voice, note, vel: Math.min(1, vel * lvl * (0.93 + hum.float() * 0.07)), len: len || 1 });
+
+    for (const st of g.kick) add(st, 'kick', 36, [0, 8].includes(st) || st % 4 === 0 ? 1.0 : 0.6);
+    for (const st of g.snare) {
+      if (lastBar && st === 12) continue;
+      add(st, 'snare', 38, 0.85);
+    }
+    const hat = d.hat;
+    if (hat === 'eighth') {
+      for (let st = 0; st < 16; st += 2) add(st, 'hat', 42, st % 4 === 2 ? 0.55 : 0.35);
+    } else if (hat === 'offbeat') {
+      for (let st = 2; st < 16; st += 4) add(st, 'hat', 46, 0.5, 2);
+    } else if (hat === 'sixteenth') {
+      // Closed 16ths with an open hat on every off-beat eighth.
+      for (let st = 0; st < 16; st++) {
+        if (st % 4 === 2) add(st, 'hat', 46, 0.5, 2);
+        else add(st, 'hat', 42, st % 2 ? 0.22 : 0.34);
+      }
+    } else if (hat === 'sparse') {
+      for (let st = 0; st < 16; st += 2) if (rr.chance(0.35)) add(st, 'hat', 42, 0.3);
+    }
+    if (lastBar) {
+      // Fill: snare roll, or toms when the style has no snare.
+      if (d.snare && s.style.id !== 'epic') {
+        for (let k = 0; k < 4; k++) add(12 + k, 'snare', 38, 0.5 + k * 0.14);
+      } else {
+        const toms = [50, 47, 45, 43];
+        for (let k = 0; k < 4; k++) add(12 + k, 'tom', toms[k], 0.7 + k * 0.08, 2);
+      }
+    }
+  }
+}
+
+
+/* ---- engine/patches.js ---- */
+// Patch table. Times in seconds, frequencies in Hz, detune in cents.
+//   wave   : 'saw' | 'pulse' | 'sine' | 'tri' | 'fm'
+//   osc2   : optional second oscillator (same wave) detuned by `detune` cents
+//   sub    : level of a sine one octave below
+//   cut    : base filter cutoff (Hz, scaled by the bright macro)
+//   fenv   : added cutoff (Hz) at envelope peak, decaying over fdec seconds
+//   key    : how much the cutoff follows pitch (0..1)
+//   res    : filter resonance 0..0.95
+//   fm*    : ratio / index / decay for the 'fm' wave
+//   vib    : vibrato depth in cents, vibRate in Hz
+//   pwm    : pulse-width LFO depth, pwmRate in Hz
+//   rev/dly: effect sends, pan: stereo spread (0 = centre)
+
+const PATCHES = {
+  padSoft: { wave: 'saw', detune: 9, osc2: true, sub: 0, cut: 1300, fenv: 0, fdec: 1, key: 0.3, res: 0.1,
+    a: 0.9, d: 1.5, s: 0.8, r: 2.5, gain: 0.2, rev: 0.6, dly: 0.12, pan: 0.5, pwm: 0 },
+  padDark: { wave: 'saw', detune: 14, osc2: true, sub: 0.3, cut: 620, fenv: 300, fdec: 2, key: 0.2, res: 0.2,
+    a: 1.6, d: 2, s: 0.7, r: 3.5, gain: 0.22, rev: 0.6, dly: 0.1, pan: 0.6, pwm: 0 },
+  padSaw: { wave: 'saw', detune: 12, osc2: true, sub: 0, cut: 2400, fenv: 1500, fdec: 0.9, key: 0.4, res: 0.12,
+    a: 0.25, d: 1, s: 0.75, r: 1.2, gain: 0.17, rev: 0.35, dly: 0.1, pan: 0.5, pwm: 0 },
+  padFM: { wave: 'fm', fmRatio: 1, fmIndex: 1.6, fmDecay: 0.9, detune: 0, osc2: false, sub: 0, cut: 6000, fenv: 0,
+    fdec: 1, key: 0, res: 0, a: 0.01, d: 1.8, s: 0.3, r: 0.8, gain: 0.22, rev: 0.35, dly: 0.2, pan: 0.3, pwm: 0 },
+  padPulse: { wave: 'pulse', pw: 0.3, detune: 7, osc2: true, sub: 0, cut: 3500, fenv: 0, fdec: 1, key: 0.3, res: 0.05,
+    a: 0.02, d: 0.3, s: 0.5, r: 0.15, gain: 0.1, rev: 0.1, dly: 0.1, pan: 0.4, pwm: 0.12, pwmRate: 0.6 },
+
+  bassSub: { wave: 'sine', detune: 0, osc2: false, sub: 0.35, cut: 500, fenv: 0, fdec: 1, key: 0, res: 0,
+    a: 0.02, d: 0.3, s: 0.9, r: 0.4, gain: 0.45, rev: 0, dly: 0, pan: 0, pwm: 0 },
+  bassSaw: { wave: 'saw', detune: 0, osc2: false, sub: 0.5, cut: 420, fenv: 1300, fdec: 0.18, key: 0.2, res: 0.3,
+    a: 0.004, d: 0.2, s: 0.55, r: 0.12, gain: 0.3, rev: 0, dly: 0, pan: 0, pwm: 0 },
+  bassPulse: { wave: 'pulse', pw: 0.4, detune: 0, osc2: false, sub: 0.4, cut: 600, fenv: 900, fdec: 0.1, key: 0.2,
+    res: 0.35, a: 0.003, d: 0.15, s: 0.4, r: 0.08, gain: 0.3, rev: 0, dly: 0, pan: 0, pwm: 0 },
+
+  arpPluck: { wave: 'saw', detune: 8, osc2: true, sub: 0, cut: 1800, fenv: 3000, fdec: 0.12, key: 0.5, res: 0.15,
+    a: 0.003, d: 0.25, s: 0, r: 0.3, gain: 0.17, rev: 0.3, dly: 0.35, pan: 0.6, pwm: 0 },
+  arpBell: { wave: 'fm', fmRatio: 3.5, fmIndex: 2, fmDecay: 0.7, detune: 0, osc2: false, sub: 0, cut: 9000, fenv: 0,
+    fdec: 1, key: 0, res: 0, a: 0.004, d: 1.6, s: 0, r: 1.2, gain: 0.17, rev: 0.5, dly: 0.4, pan: 0.7, pwm: 0 },
+  arpSaw: { wave: 'saw', detune: 0, osc2: false, sub: 0, cut: 1400, fenv: 3500, fdec: 0.1, key: 0.5, res: 0.3,
+    a: 0.002, d: 0.18, s: 0.2, r: 0.15, gain: 0.14, rev: 0.2, dly: 0.3, pan: 0.5, pwm: 0 },
+  arpPulse: { wave: 'pulse', pw: 0.25, detune: 0, osc2: false, sub: 0, cut: 3500, fenv: 1500, fdec: 0.08, key: 0.5,
+    res: 0.1, a: 0.002, d: 0.12, s: 0.25, r: 0.08, gain: 0.13, rev: 0.12, dly: 0.25, pan: 0.5, pwm: 0.1, pwmRate: 2 },
+
+  leadBell: { wave: 'fm', fmRatio: 2, fmIndex: 3, fmDecay: 1.0, detune: 0, osc2: false, sub: 0, cut: 9000, fenv: 0,
+    fdec: 1, key: 0, res: 0, a: 0.005, d: 2.2, s: 0, r: 1.5, gain: 0.2, rev: 0.55, dly: 0.45, pan: 0.3, pwm: 0 },
+  leadSaw: { wave: 'saw', detune: 7, osc2: true, sub: 0, cut: 2600, fenv: 1200, fdec: 0.3, key: 0.6, res: 0.2,
+    a: 0.02, d: 0.3, s: 0.7, r: 0.35, gain: 0.15, rev: 0.3, dly: 0.35, pan: 0.2, pwm: 0, vib: 12, vibRate: 5.2 },
+  leadPulse: { wave: 'pulse', pw: 0.5, detune: 0, osc2: false, sub: 0, cut: 5000, fenv: 0, fdec: 1, key: 0.4, res: 0.05,
+    a: 0.005, d: 0.1, s: 0.6, r: 0.1, gain: 0.12, rev: 0.12, dly: 0.15, pan: 0.2, pwm: 0.15, pwmRate: 3.1, vib: 8, vibRate: 5.8 },
+  leadFM: { wave: 'fm', fmRatio: 2, fmIndex: 2.2, fmDecay: 1.2, detune: 0, osc2: false, sub: 0, cut: 8000, fenv: 0,
+    fdec: 1, key: 0, res: 0, a: 0.01, d: 1.0, s: 0.2, r: 0.6, gain: 0.18, rev: 0.45, dly: 0.3, pan: 0.2, pwm: 0 },
+
+  // ---- Acoustic-style instruments -------------------------------------
+  // formants: [freq Hz, Q, gain] band-pass bank; dry: unfiltered mix level;
+  // breath: noise level; scoop: attack pitch bend in cents; vibDelay: seconds
+  // before vibrato fades in; fRise: cutoff swell time (brass).
+  leadSax: { wave: 'reed', detune: 0, osc2: false, sub: 0, cut: 5200, fenv: 1800, fdec: 0.25, key: 0.3, res: 0.05,
+    formants: [[520, 2.2, 1.0], [1500, 3, 0.55], [2700, 4, 0.25]], dry: 0.4, breath: 0.07,
+    a: 0.045, d: 0.3, s: 0.85, r: 0.14, gain: 0.36, rev: 0.3, dly: 0.2, pan: 0.15, pwm: 0,
+    vib: 22, vibRate: 5.3, vibDelay: 0.35, scoop: 40, scoopDec: 0.07 },
+  leadFlute: { wave: 'tri', detune: 0, osc2: false, sub: 0, cut: 3600, fenv: 600, fdec: 0.15, key: 0.5, res: 0,
+    formants: [[900, 2, 0.25]], dry: 0.9, breath: 0.2,
+    a: 0.06, d: 0.2, s: 0.9, r: 0.15, gain: 0.26, rev: 0.4, dly: 0.25, pan: 0.2, pwm: 0,
+    vib: 16, vibRate: 5.0, vibDelay: 0.4 },
+  leadClarinet: { wave: 'pulse', pw: 0.5, detune: 0, osc2: false, sub: 0, cut: 3200, fenv: 800, fdec: 0.2, key: 0.3, res: 0,
+    formants: [[600, 2.5, 0.8], [1800, 3, 0.3]], dry: 0.5, breath: 0.04,
+    a: 0.03, d: 0.25, s: 0.9, r: 0.1, gain: 0.19, rev: 0.3, dly: 0.2, pan: 0.15, pwm: 0,
+    vib: 10, vibRate: 5.2, vibDelay: 0.5 },
+  leadTrumpet: { wave: 'saw', detune: 0, osc2: false, sub: 0, cut: 900, fenv: 4200, fdec: 1, fRise: 0.05, key: 0.5, res: 0.05,
+    formants: [[1100, 3, 0.8], [2400, 3.5, 0.4]], dry: 0.5, breath: 0.02,
+    a: 0.03, d: 0.2, s: 0.8, r: 0.1, gain: 0.17, rev: 0.3, dly: 0.2, pan: 0.15, pwm: 0,
+    vib: 9, vibRate: 5.6, vibDelay: 0.4, scoop: 30, scoopDec: 0.05 },
+  leadVibes: { wave: 'fm', fmRatio: 3, fmIndex: 0.9, fmDecay: 0.45, detune: 0, osc2: false, sub: 0, cut: 9000, fenv: 0,
+    fdec: 1, key: 0, res: 0, a: 0.003, d: 1.8, s: 0, r: 1.2, gain: 0.2, rev: 0.4, dly: 0.3, pan: 0.3, pwm: 0 },
+  leadOrgan: { wave: 'organ', detune: 0, osc2: false, sub: 0, cut: 6000, fenv: 0, fdec: 1, key: 0, res: 0,
+    a: 0.01, d: 0.05, s: 0.9, r: 0.08, gain: 0.16, rev: 0.25, dly: 0.15, pan: 0.2, pwm: 0,
+    vib: 6, vibRate: 6.2, vibDelay: 0.1 },
+  leadChoir: { wave: 'saw', detune: 10, osc2: true, sub: 0, cut: 4500, fenv: 0, fdec: 1, key: 0.2, res: 0,
+    formants: [[800, 5, 1.0], [1150, 6, 0.6], [2900, 8, 0.25]], dry: 0.15, breath: 0.03,
+    a: 0.25, d: 0.5, s: 0.8, r: 0.5, gain: 0.28, rev: 0.5, dly: 0.2, pan: 0.3, pwm: 0,
+    vib: 10, vibRate: 5.0, vibDelay: 0.3 },
+
+  padStrings: { wave: 'saw', detune: 16, osc2: true, sub: 0, cut: 2800, fenv: 0, fdec: 1, key: 0.4, res: 0.05,
+    a: 0.4, d: 1.5, s: 0.85, r: 0.7, gain: 0.17, rev: 0.4, dly: 0.08, pan: 0.6, pwm: 0,
+    vib: 5, vibRate: 5.1, vibDelay: 0.5 },
+  padChoir: { wave: 'saw', detune: 10, osc2: true, sub: 0, cut: 4500, fenv: 0, fdec: 1, key: 0.2, res: 0,
+    formants: [[700, 5, 1.0], [1100, 6, 0.6], [2800, 8, 0.25]], dry: 0.12, breath: 0.02,
+    a: 0.6, d: 1.5, s: 0.8, r: 1.4, gain: 0.26, rev: 0.6, dly: 0.1, pan: 0.6, pwm: 0,
+    vib: 9, vibRate: 5.0, vibDelay: 0.5 },
+  bassUpright: { wave: 'saw', detune: 0, osc2: false, sub: 0.45, cut: 330, fenv: 700, fdec: 0.1, key: 0.3, res: 0.1,
+    a: 0.006, d: 0.55, s: 0.12, r: 0.2, gain: 0.38, rev: 0, dly: 0, pan: 0, pwm: 0 },
+  // Techno: resonant 303-style acid bass (cutoff snaps up and falls) and a short detuned stab.
+  bassAcid: { wave: 'saw', detune: 0, osc2: false, sub: 0.3, cut: 280, fenv: 2300, fdec: 0.13, key: 0.2, res: 0.72,
+    a: 0.003, d: 0.14, s: 0.3, r: 0.05, gain: 0.27, rev: 0, dly: 0.05, pan: 0, pwm: 0 },
+  arpStab: { wave: 'saw', detune: 10, osc2: true, sub: 0, cut: 900, fenv: 2800, fdec: 0.09, key: 0.4, res: 0.25,
+    a: 0.002, d: 0.13, s: 0, r: 0.1, gain: 0.16, rev: 0.3, dly: 0.4, pan: 0.5, pwm: 0 },
+  arpVibes: { wave: 'fm', fmRatio: 3, fmIndex: 0.8, fmDecay: 0.5, detune: 0, osc2: false, sub: 0, cut: 9000, fenv: 0,
+    fdec: 1, key: 0, res: 0, a: 0.003, d: 1.5, s: 0, r: 1, gain: 0.15, rev: 0.4, dly: 0.25, pan: 0.6, pwm: 0 },
+};
+
+// Instruments the user can pick for the lead line (null = the style decides).
+const LEAD_INSTRUMENTS = [
+  { id: 'auto', name: 'Auto', patch: null },
+  { id: 'sax', name: 'Saxophone', patch: 'leadSax', lo: 55, hi: 81 },
+  { id: 'flute', name: 'Flute', patch: 'leadFlute', lo: 67, hi: 96 },
+  { id: 'clarinet', name: 'Clarinet', patch: 'leadClarinet', lo: 55, hi: 91 },
+  { id: 'trumpet', name: 'Trumpet', patch: 'leadTrumpet', lo: 60, hi: 84 },
+  { id: 'vibes', name: 'Vibraphone', patch: 'leadVibes', lo: 60, hi: 96 },
+  { id: 'organ', name: 'Organ', patch: 'leadOrgan', lo: 55, hi: 88 },
+  { id: 'choir', name: 'Choir', patch: 'leadChoir', lo: 55, hi: 79 },
+];
+
+
+/* ---- engine/voices.js ---- */
+// Realtime voices: a subtractive/FM synth voice and four drum voices.
+// No allocation after construction. All state is plain numbers.
+
+const TWO_PI = 2 * Math.PI;
+const DENORM = 1e-20;
+
+function polyBlep(t, dt) {
+  if (t < dt) {
+    t /= dt;
+    return t + t - t * t - 1;
+  }
+  if (t > 1 - dt) {
+    t = (t - 1) / dt;
+    return t * t + t + t + 1;
+  }
+  return 0;
+}
+
+function midiToHz(n) {
+  return 440 * Math.pow(2, (n - 69) / 12);
+}
+
+// ---------------------------------------------------------------------------
+
+class SynthVoice {
+  constructor(sr) {
+    this.sr = sr;
+    this.active = false;
+    this.p = null;
+    this.age = 0;
+    this.stage = 0; // 1 attack, 2 decay/sustain, 4 release
+    this.env = 0;
+    this.note = 0;
+    this.tick = 0;
+    // Wind/brass/choir features. Typed arrays: element writes do not allocate.
+    this.fc = new Float64Array(12); // per formant: a1, a2, a3, gain*k
+    this.fs = new Float64Array(6); // per formant: ic1, ic2
+    this.nf = 0;
+    this.dry = 1;
+    this.breath = 0;
+    this.nrng = 1;
+    this.lpN = 0;
+    this.be = 0;
+    this.beCoef = 0;
+    this.fRise = false;
+    this.feCoefRise = 0;
+    this.scoopNow = 0;
+    this.scoopCoef = 0;
+  }
+
+  // bright: 0..1 macro. pos: -1..1 pan position. ph0: 0..1 start phase.
+  start(note, vel, lenSamples, patch, bright, pos, ph0) {
+    const sr = this.sr;
+    const p = patch;
+    this.p = p;
+    this.active = true;
+    this.note = note;
+    this.age = 0;
+    this.vel = vel;
+    this.freq = 440 * Math.pow(2, (note - 69) / 12);
+    this.gate = lenSamples;
+    this.stage = 1;
+    this.env = 0;
+    this.atkInc = 1 / Math.max(1, p.a * sr);
+    this.decCoef = Math.exp(-4.6 / (sr * Math.max(0.005, p.d)));
+    this.relCoef = Math.exp(-4.6 / (sr * Math.max(0.005, p.r)));
+    this.sustain = p.s;
+
+    const spread = p.detune || 0;
+    this.mul1 = p.osc2 ? Math.pow(2, -spread / 2400) : 1;
+    this.mul2 = Math.pow(2, spread / 2400);
+    this.ph1 = ph0;
+    this.ph2 = (ph0 * 7.31) % 1;
+    this.phs = 0;
+    this.phm = 0;
+    this.lfo = ph0;
+    this.pwmPh = ph0;
+
+    this.fe = 1;
+    this.feCoefBlock = Math.exp(-16 / (sr * Math.max(0.01, p.fdec || 1)));
+    this.fmE = 1;
+    this.fmCoef = Math.exp(-4.6 / (sr * Math.max(0.05, p.fmDecay || 1)));
+
+    // Filter envelope that rises instead of falling (brass "blat").
+    this.fRise = (p.fRise || 0) > 0;
+    this.feCoefRise = Math.exp(-16 / (sr * Math.max(0.005, p.fRise || 1)));
+    if (this.fRise) this.fe = 0;
+    // Pitch scoop into the note, in cents, settling over scoopDec seconds.
+    this.scoopNow = p.scoop || 0;
+    this.scoopCoef = Math.exp(-16 / (sr * Math.max(0.005, p.scoopDec || 0.06)));
+    // Breath noise: deterministic seed from note and start phase.
+    this.breath = p.breath || 0;
+    this.nrng = (Math.imul(note + 1, 2654435761) ^ Math.floor(ph0 * 4294967295)) | 1;
+    this.lpN = 0;
+    this.be = 1;
+    this.beCoef = Math.exp(-1 / (sr * 0.09));
+    // Parallel formant (band-pass) bank, coefficients fixed for the note.
+    const F = p.formants;
+    this.nf = F ? Math.min(3, F.length) : 0;
+    this.dry = p.dry === undefined ? 1 : p.dry;
+    this.fs.fill(0);
+    for (let q = 0; q < this.nf; q++) {
+      const g = Math.tan((Math.PI * Math.min(F[q][0], sr * 0.4)) / sr);
+      const kq = 1 / F[q][1];
+      const a1f = 1 / (1 + g * (g + kq));
+      this.fc[q * 4] = a1f;
+      this.fc[q * 4 + 1] = g * a1f;
+      this.fc[q * 4 + 2] = g * g * a1f;
+      this.fc[q * 4 + 3] = F[q][2] * kq;
+    }
+
+    // Cutoff base: bright macro moves it by +-1.5 octaves.
+    const track = Math.pow(this.freq / 261.63, p.key || 0);
+    this.cutBase = p.cut * Math.pow(2, (bright - 0.5) * 3) * track;
+    this.res = Math.min(0.95, p.res || 0);
+    this.ic1 = 0;
+    this.ic2 = 0;
+    this.a1 = this.a2 = this.a3 = 0;
+    this.tick = 0;
+    this.vibMul = 1;
+    this.pw = p.pw || 0.5;
+
+    const ang = (pos * (p.pan || 0) + 1) * (Math.PI / 4);
+    this.gL = Math.cos(ang) * 1.3;
+    this.gR = Math.sin(ang) * 1.3;
+    this.gain = p.gain * (0.35 + 0.65 * vel);
+  }
+
+  setBright(bright) {
+    // Applied lazily to cutoff at next control tick for sustained voices.
+    const p = this.p;
+    if (!p) return;
+    const track = Math.pow(this.freq / 261.63, p.key || 0);
+    this.cutBase = p.cut * Math.pow(2, (bright - 0.5) * 3) * track;
+  }
+
+  release() {
+    if (this.stage !== 4) this.stage = 4;
+  }
+
+  // Adds into L/R (dry), REV and DLY (mono sends). Frames [o, o+n).
+  render(n, o, L, R, REV, DLY) {
+    const p = this.p;
+    const sr = this.sr;
+    const wave = p.wave;
+    const isFM = wave === 'fm';
+    const isSaw = wave === 'saw';
+    const isPulse = wave === 'pulse';
+    const isTri = wave === 'tri';
+    const isReed = wave === 'reed';
+    const isOrgan = wave === 'organ';
+    const two = !!p.osc2;
+    const nf = this.nf;
+    const fc = this.fc;
+    const fs = this.fs;
+    const dry = this.dry;
+    const breath = this.breath;
+    const beCoef = this.beCoef;
+    const rise = this.fRise;
+    const scoop = p.scoop || 0;
+    const vibD = p.vibDelay ? p.vibDelay * sr : 0;
+    const vibR = p.vibDelay ? 0.3 * sr : 0.15 * sr;
+    const sub = p.sub || 0;
+    const fenv = p.fenv || 0;
+    const vibDepth = p.vib || 0;
+    const vibInc = ((p.vibRate || 5) * 16) / sr;
+    const pwmDepth = p.pwm || 0;
+    const pwmInc = ((p.pwmRate || 1) * 16) / sr;
+    const fmRatio = p.fmRatio || 1;
+    const fmIndex = p.fmIndex || 0;
+    const revS = p.rev || 0;
+    const dlyS = p.dly || 0;
+    const nyq = sr * 0.45;
+    const oscGain = two ? 0.6 : 1;
+
+    let env = this.env;
+    let stage = this.stage;
+    let ph1 = this.ph1;
+    let ph2 = this.ph2;
+    let phs = this.phs;
+    let phm = this.phm;
+    let ic1 = this.ic1;
+    let ic2 = this.ic2;
+    let a1 = this.a1;
+    let a2 = this.a2;
+    let a3 = this.a3;
+    let k = 2 - 2 * this.res;
+    let fmE = this.fmE;
+    let gate = this.gate;
+    let tick = this.tick;
+    const freq = this.freq;
+    let pw = this.pw;
+    let vibMul = this.vibMul;
+    let nr = this.nrng;
+    let lpN = this.lpN;
+    let be = this.be;
+
+    for (let i = 0; i < n; i++) {
+      if ((tick & 15) === 0) {
+        // Control-rate update every 16 samples.
+        if (rise) this.fe = 1 - (1 - this.fe) * this.feCoefRise;
+        else this.fe *= this.feCoefBlock;
+        let fc = this.cutBase + fenv * this.fe;
+        if (fc > nyq) fc = nyq;
+        if (fc < 20) fc = 20;
+        const g = Math.tan((Math.PI * fc) / sr);
+        a1 = 1 / (1 + g * (g + k));
+        a2 = g * a1;
+        a3 = g * a2;
+        this.lfo += vibInc;
+        if (this.lfo >= 1) this.lfo -= 1;
+        if (vibDepth || scoop) {
+          let cents = 0;
+          if (vibDepth) {
+            let fade = (this.age - vibD) / vibR;
+            fade = fade < 0 ? 0 : fade > 1 ? 1 : fade;
+            cents = vibDepth * fade * Math.sin(TWO_PI * this.lfo);
+          }
+          if (scoop) {
+            this.scoopNow *= this.scoopCoef;
+            cents -= this.scoopNow;
+          }
+          vibMul = Math.pow(2, cents / 1200);
+        }
+        if (pwmDepth) {
+          this.pwmPh += pwmInc;
+          if (this.pwmPh >= 1) this.pwmPh -= 1;
+          pw = (p.pw || 0.5) + pwmDepth * Math.sin(TWO_PI * this.pwmPh);
+          if (pw < 0.08) pw = 0.08;
+          if (pw > 0.92) pw = 0.92;
+        }
+      }
+      tick++;
+
+      // Oscillators
+      let x;
+      const f1 = freq * this.mul1 * vibMul;
+      if (isFM) {
+        const dtc = f1 / sr;
+        ph1 += dtc;
+        if (ph1 >= 1) ph1 -= 1;
+        phm += dtc * fmRatio;
+        if (phm >= 1) phm -= 1;
+        fmE *= this.fmCoef;
+        x = Math.sin(TWO_PI * (ph1 + fmIndex * (0.25 + 0.75 * fmE) * this.vel * Math.sin(TWO_PI * phm)));
+      } else {
+        const dt1 = f1 / sr;
+        ph1 += dt1;
+        if (ph1 >= 1) ph1 -= 1;
+        if (isSaw) {
+          x = 2 * ph1 - 1 - polyBlep(ph1, dt1);
+        } else if (isPulse) {
+          x = ph1 < pw ? 1 : -1;
+          x += polyBlep(ph1, dt1);
+          let t2 = ph1 - pw;
+          if (t2 < 0) t2 += 1;
+          x -= polyBlep(t2, dt1);
+        } else if (isReed) {
+          // Saw plus a narrow pulse: buzzy, even and odd harmonics.
+          let q = ph1 < 0.38 ? 1 : -1;
+          q += polyBlep(ph1, dt1);
+          let t3 = ph1 - 0.38;
+          if (t3 < 0) t3 += 1;
+          q -= polyBlep(t3, dt1);
+          x = 0.6 * (2 * ph1 - 1 - polyBlep(ph1, dt1)) + 0.4 * q;
+        } else if (isOrgan) {
+          x =
+            0.45 * Math.sin(TWO_PI * ph1) +
+            0.3 * Math.sin(TWO_PI * 2 * ph1) +
+            0.2 * Math.sin(TWO_PI * 3 * ph1) +
+            0.12 * Math.sin(TWO_PI * 4 * ph1);
+        } else if (isTri) {
+          x = 4 * Math.abs(ph1 - 0.5) - 1;
+        } else {
+          x = Math.sin(TWO_PI * ph1);
+        }
+        if (two) {
+          const dt2 = (freq * this.mul2 * vibMul) / sr;
+          ph2 += dt2;
+          if (ph2 >= 1) ph2 -= 1;
+          let y;
+          if (isSaw) {
+            y = 2 * ph2 - 1 - polyBlep(ph2, dt2);
+          } else if (isPulse) {
+            y = ph2 < pw ? 1 : -1;
+            y += polyBlep(ph2, dt2);
+            let t2 = ph2 - pw;
+            if (t2 < 0) t2 += 1;
+            y -= polyBlep(t2, dt2);
+          } else {
+            y = Math.sin(TWO_PI * ph2);
+          }
+          x += y;
+        }
+        x *= oscGain;
+      }
+      if (sub) {
+        phs += (freq * 0.5) / sr;
+        if (phs >= 1) phs -= 1;
+        x += sub * Math.sin(TWO_PI * phs);
+      }
+
+      // State-variable lowpass (TPT)
+      const v3 = x - ic2;
+      const v1 = a1 * ic1 + a2 * v3;
+      const v2 = ic2 + a2 * ic1 + a3 * v3;
+      ic1 = 2 * v1 - ic1;
+      ic2 = 2 * v2 - ic2;
+
+      // Optional formant bank (parallel band-passes) and breath noise.
+      let sig = v2;
+      if (nf > 0) {
+        let acc = v2 * dry;
+        for (let q = 0; q < nf; q++) {
+          const b = q * 4;
+          const s = q * 2;
+          const f1c = fs[s];
+          const f2c = fs[s + 1];
+          const v3f = v2 - f2c;
+          const v1f = fc[b] * f1c + fc[b + 1] * v3f;
+          const v2f = f2c + fc[b + 1] * f1c + fc[b + 2] * v3f;
+          fs[s] = 2 * v1f - f1c;
+          fs[s + 1] = 2 * v2f - f2c;
+          acc += fc[b + 3] * v1f;
+        }
+        sig = acc;
+      }
+      if (breath > 0) {
+        nr = (Math.imul(nr, 1664525) + 1013904223) | 0;
+        const nz = nr / 2147483648;
+        lpN += 0.3 * (nz - lpN);
+        be *= beCoef;
+        sig += breath * (0.35 + 0.65 * be) * (nz - lpN);
+      }
+
+      // Amp envelope
+      if (stage === 1) {
+        env += this.atkInc;
+        if (env >= 1) {
+          env = 1;
+          stage = 2;
+        }
+      } else if (stage === 2) {
+        env = this.sustain + (env - this.sustain) * this.decCoef;
+        if (env < 1e-4 && this.sustain < 1e-4) {
+          this.active = false;
+          break;
+        }
+      } else {
+        env *= this.relCoef;
+        if (env < 1e-4) {
+          this.active = false;
+          break;
+        }
+      }
+      if (stage !== 4) {
+        gate -= 1;
+        if (gate <= 0) stage = 4;
+      }
+
+      const out = sig * env * this.gain;
+      const idx = o + i;
+      L[idx] += out * this.gL;
+      R[idx] += out * this.gR;
+      REV[idx] += out * revS;
+      DLY[idx] += out * dlyS;
+    }
+
+    this.env = env;
+    this.stage = stage;
+    this.ph1 = ph1;
+    this.ph2 = ph2;
+    this.phs = phs;
+    this.phm = phm;
+    this.ic1 = ic1 + DENORM;
+    this.ic2 = ic2 + DENORM;
+    this.a1 = a1;
+    this.a2 = a2;
+    this.a3 = a3;
+    this.fmE = fmE;
+    this.gate = gate;
+    this.tick = tick;
+    this.pw = pw;
+    this.vibMul = vibMul;
+    this.nrng = nr;
+    this.lpN = lpN;
+    this.be = be;
+    this.age += n;
+  }
+}
+
+// ---------------------------------------------------------------------------
+
+const K_KICK = 1;
+const K_SNARE = 2;
+const K_HAT = 3;
+const K_TOM = 4;
+
+// All per-sample state lives in locals inside render() and is written back
+// once per call: object-field double stores allocate in V8 and would feed the
+// garbage collector from the audio thread.
+class DrumVoice {
+  constructor(sr, seed) {
+    this.sr = sr;
+    this.active = false;
+    this.kind = 0;
+    this.rng = (seed | 0) || 12345;
+    this.age = 0;
+    this.vel = 0;
+    this.ph = 0;
+    this.lp1 = 0;
+    this.lp2 = 0;
+    this.env = 0;
+    this.pitchEnv = 0;
+    this.toneEnv = 0;
+    this.ampCoef = 0;
+    this.pitchCoef = 0;
+    this.toneCoef = 0;
+    this.hpA = 0;
+    this.f0 = 0;
+    this.fSpan = 0;
+    this.rev = 0;
+  }
+
+  start(voice, note, vel) {
+    const sr = this.sr;
+    this.active = true;
+    this.age = 0;
+    this.vel = vel;
+    this.ph = 0;
+    this.lp1 = 0;
+    this.lp2 = 0;
+    this.env = 1;
+    this.pitchEnv = 1;
+    this.toneEnv = 1;
+    this.toneCoef = 0;
+    this.pitchCoef = 0;
+    this.hpA = 0;
+    this.f0 = 0;
+    this.fSpan = 0;
+    if (voice === 'kick') {
+      this.kind = K_KICK;
+      this.ampCoef = Math.exp(-1 / (sr * 0.075));
+      this.pitchCoef = Math.exp(-1 / (sr * 0.028));
+      this.f0 = 44;
+      this.fSpan = 150;
+      this.rev = 0;
+    } else if (voice === 'snare') {
+      this.kind = K_SNARE;
+      this.ampCoef = Math.exp(-1 / (sr * 0.075));
+      this.toneCoef = Math.exp(-1 / (sr * 0.045));
+      this.pitchCoef = Math.exp(-1 / (sr * 0.02));
+      this.hpA = 1 - Math.exp((-TWO_PI * 1400) / sr);
+      this.rev = 0.22;
+    } else if (voice === 'hat') {
+      this.kind = K_HAT;
+      const open = note === 46;
+      this.ampCoef = Math.exp(-1 / (sr * (open ? 0.11 : 0.022)));
+      this.hpA = 1 - Math.exp((-TWO_PI * 7000) / sr);
+      this.rev = 0.12;
+    } else {
+      this.kind = K_TOM;
+      this.ampCoef = Math.exp(-1 / (sr * 0.17));
+      this.pitchCoef = Math.exp(-1 / (sr * 0.05));
+      this.f0 = 440 * Math.pow(2, (note - 69) / 12);
+      this.fSpan = this.f0 * 0.8;
+      this.rev = 0.3;
+    }
+  }
+
+  // Adds to L/R (centre) and REV for frames [o, o+n).
+  render(n, o, L, R, REV) {
+    const kind = this.kind;
+    const sr = this.sr;
+    const gain = this.vel * 0.55;
+    const rev = this.rev;
+    const ampCoef = this.ampCoef;
+    const pitchCoef = this.pitchCoef;
+    const toneCoef = this.toneCoef;
+    const hpA = this.hpA;
+    const f0 = this.f0;
+    const fSpan = this.fSpan;
+    let env = this.env;
+    let pe = this.pitchEnv;
+    let te = this.toneEnv;
+    let ph = this.ph;
+    let lp1 = this.lp1;
+    let lp2 = this.lp2;
+    let rng = this.rng;
+    const age = this.age;
+    let done = false;
+    let i = 0;
+    for (; i < n; i++) {
+      let out;
+      if (kind === K_KICK) {
+        pe *= pitchCoef;
+        ph += (f0 + fSpan * pe) / sr;
+        if (ph >= 1) ph -= 1;
+        let click = 0;
+        if (age + i < 40) {
+          rng = (Math.imul(rng, 1664525) + 1013904223) | 0;
+          click = (rng / 2147483648) * 0.25;
+        }
+        out = Math.tanh(1.8 * Math.sin(TWO_PI * ph)) * env * 0.9 + click * env;
+      } else if (kind === K_SNARE) {
+        rng = (Math.imul(rng, 1664525) + 1013904223) | 0;
+        const nz = rng / 2147483648;
+        lp1 += hpA * (nz - lp1);
+        pe *= pitchCoef;
+        ph += (175 + 70 * pe) / sr;
+        if (ph >= 1) ph -= 1;
+        te *= toneCoef;
+        out = (nz - lp1) * env * 0.7 + Math.sin(TWO_PI * ph) * te * 0.45;
+      } else if (kind === K_HAT) {
+        rng = (Math.imul(rng, 1664525) + 1013904223) | 0;
+        const nz = rng / 2147483648;
+        lp1 += hpA * (nz - lp1);
+        const h1 = nz - lp1;
+        lp2 += hpA * (h1 - lp2);
+        out = (h1 - lp2) * env * 0.9;
+      } else {
+        pe *= pitchCoef;
+        ph += (f0 + fSpan * pe) / sr;
+        if (ph >= 1) ph -= 1;
+        out = Math.sin(TWO_PI * ph) * env * 0.9;
+      }
+      env *= ampCoef;
+      out *= gain;
+      const idx = o + i;
+      L[idx] += out;
+      R[idx] += out;
+      REV[idx] += out * rev;
+      if (env < 1e-4) {
+        done = true;
+        i++;
+        break;
+      }
+    }
+    if (done) this.active = false;
+    this.env = env;
+    this.pitchEnv = pe;
+    this.toneEnv = te;
+    this.ph = ph;
+    this.lp1 = lp1;
+    this.lp2 = lp2;
+    this.rng = rng;
+    this.age = age + i;
+  }
+}
+
+
+/* ---- engine/fx.js ---- */
+// Effects: tempo-synced ping-pong delay and a Freeverb-style stereo reverb.
+
+class PingPongDelay {
+  constructor(sr, maxSec) {
+    this.sr = sr;
+    this.size = Math.ceil(sr * (maxSec || 3)) + 4;
+    this.bufL = new Float32Array(this.size);
+    this.bufR = new Float32Array(this.size);
+    this.w = 0;
+    this.delay = sr * 0.4;
+    this.target = this.delay;
+    this.fb = 0.4;
+    this.fbTarget = 0.4;
+    this.lpL = 0;
+    this.lpR = 0;
+    this.lpA = 0.42; // feedback low-pass amount (higher = darker)
+  }
+
+  setTime(sec) {
+    this.target = Math.max(32, Math.min(this.size - 8, sec * this.sr));
+  }
+
+  setFeedback(fb) {
+    this.fbTarget = Math.min(0.75, Math.max(0, fb));
+  }
+
+  // Adds wet signal to outL/outR scaled by `level`.
+  process(n, o, inp, outL, outR, level) {
+    const size = this.size;
+    const bufL = this.bufL;
+    const bufR = this.bufR;
+    let w = this.w;
+    let d = this.delay;
+    let lpL = this.lpL;
+    let lpR = this.lpR;
+    const a = this.lpA;
+    const target = this.target;
+    let fb = this.fb;
+    const fbT = this.fbTarget;
+    for (let i = 0; i < n; i++) {
+      d += (target - d) * 0.0002;
+      fb += (fbT - fb) * 0.001;
+      let r = w - d;
+      if (r < 0) r += size;
+      const i0 = Math.floor(r);
+      const fr = r - i0;
+      const i1 = i0 + 1 >= size ? 0 : i0 + 1;
+      const dl = bufL[i0] * (1 - fr) + bufL[i1] * fr;
+      const dr = bufR[i0] * (1 - fr) + bufR[i1] * fr;
+      lpL += (1 - a) * (dl - lpL);
+      lpR += (1 - a) * (dr - lpR);
+      bufL[w] = inp[o + i] + fb * lpR;
+      bufR[w] = fb * lpL;
+      w++;
+      if (w >= size) w = 0;
+      outL[o + i] += dl * level;
+      outR[o + i] += dr * level;
+    }
+    this.w = w;
+    this.delay = d;
+    this.fb = fb;
+    this.lpL = lpL + 1e-20;
+    this.lpR = lpR + 1e-20;
+  }
+}
+
+const COMB = [1116, 1188, 1277, 1356, 1422, 1491, 1557, 1617];
+const ALLP = [556, 441, 341, 225];
+const SPREAD = 23;
+
+class Reverb {
+  constructor(sr) {
+    const sc = sr / 44100;
+    this.combL = [];
+    this.combR = [];
+    this.apL = [];
+    this.apR = [];
+    for (const len of COMB) {
+      this.combL.push({ buf: new Float32Array(Math.round(len * sc)), i: 0, f: 0 });
+      this.combR.push({ buf: new Float32Array(Math.round((len + SPREAD) * sc)), i: 0, f: 0 });
+    }
+    for (const len of ALLP) {
+      this.apL.push({ buf: new Float32Array(Math.round(len * sc)), i: 0 });
+      this.apR.push({ buf: new Float32Array(Math.round((len + SPREAD) * sc)), i: 0 });
+    }
+    this.fb = 0.85;
+    this.fbTarget = 0.85;
+    this.damp = 0.28;
+  }
+
+  setSize(size) {
+    this.fbTarget = 0.72 + 0.24 * Math.min(1, Math.max(0, size));
+  }
+
+  process(n, o, inp, outL, outR, level) {
+    const damp = this.damp;
+    const g = 0.03;
+    const combL = this.combL;
+    const combR = this.combR;
+    const apL = this.apL;
+    const apR = this.apR;
+    let fb = this.fb;
+    const fbT = this.fbTarget;
+    for (let s = 0; s < n; s++) {
+      fb += (fbT - fb) * 0.0005;
+      const x = inp[o + s] * g;
+      let accL = 0;
+      let accR = 0;
+      for (let c = 0; c < 8; c++) {
+        const cl = combL[c];
+        const bl = cl.buf;
+        const ol = bl[cl.i];
+        cl.f = ol * (1 - damp) + cl.f * damp;
+        bl[cl.i] = x + cl.f * fb;
+        if (++cl.i >= bl.length) cl.i = 0;
+        accL += ol;
+
+        const cr = combR[c];
+        const br = cr.buf;
+        const or = br[cr.i];
+        cr.f = or * (1 - damp) + cr.f * damp;
+        br[cr.i] = x + cr.f * fb;
+        if (++cr.i >= br.length) cr.i = 0;
+        accR += or;
+      }
+      for (let a = 0; a < 4; a++) {
+        const al = apL[a];
+        const bo = al.buf[al.i];
+        const outl = -accL + bo;
+        al.buf[al.i] = accL + bo * 0.5;
+        if (++al.i >= al.buf.length) al.i = 0;
+        accL = outl;
+
+        const ar = apR[a];
+        const bor = ar.buf[ar.i];
+        const outr = -accR + bor;
+        ar.buf[ar.i] = accR + bor * 0.5;
+        if (++ar.i >= ar.buf.length) ar.i = 0;
+        accR = outr;
+      }
+      outL[o + s] += accL * level;
+      outR[o + s] += accR * level;
+    }
+    this.fb = fb;
+  }
+}
+
+
+/* ---- engine/engine.js ---- */
+// Realtime engine: schedules composer events sample-accurately, renders the
+// voices and effects, and applies master processing. Works identically inside
+// an AudioWorklet and in Node (for offline tests).
+
+
+const MAX_CHUNK = 256;
+const N_VOICES = 24;
+const N_DRUMS = 8;
+
+// Smooth saturator, tanh-shaped, in plain arithmetic (no builtin call, so it
+// stays allocation-free in the audio thread). Exact tanh Pade-style rational
+// approximation, clamped to +-1 outside |x| >= 3.
+function softClip(x) {
+  if (x > 3) return 1;
+  if (x < -3) return -1;
+  const x2 = x * x;
+  return (x * (27 + x2)) / (27 + 9 * x2);
+}
+
+class Engine {
+  constructor(sr) {
+    this.sr = sr;
+    this.composer = new Composer();
+    this.voices = [];
+    for (let i = 0; i < N_VOICES; i++) this.voices.push(new SynthVoice(sr));
+    this.drums = [];
+    for (let i = 0; i < N_DRUMS; i++) this.drums.push(new DrumVoice(sr, 1000 + i * 7919));
+    this.delay = new PingPongDelay(sr, 3.2);
+    this.reverb = new Reverb(sr);
+
+    const z = () => new Float32Array(MAX_CHUNK);
+    this.bL = z();
+    this.bR = z();
+    this.bREV = z();
+    this.bDLY = z();
+    this.dL = z();
+    this.dR = z();
+    this.dREV = z();
+
+    this.running = false;
+    this.leadPatch = null;
+    this.volume = 0.8;
+    this.volNow = 0.0;
+    this.bright = 0.5;
+    this.brightTarget = 0.5;
+    this.trim = 1;
+    this.trimTarget = 1;
+    this.dlyLevel = 0;
+    this.dlyTarget = 0;
+    this.revLevel = 0;
+    this.revTarget = 0;
+    this.duck = 0;
+    this.duckAmt = 0;
+    this.duckCoef = Math.exp(-1 / (sr * 0.16));
+
+    this.plan = null;
+    this.stepIndex = 0;
+    this.stepLen = (sr * 60) / 120 / 4;
+    this.gridTime = 0;
+    this.nextTrig = 0;
+    this.samplePos = 0;
+    this.phSeed = 12345;
+
+    this.dcXl = 0;
+    this.dcXr = 0;
+    this.dcYl = 0;
+    this.dcYr = 0;
+    this.peak = 0;
+    this.onBar = null;
+  }
+
+  setSeed(seed) {
+    this.composer.setSeed(seed);
+    if (!this.running) {
+      this.running = true;
+      this.stepIndex = 0;
+      this.gridTime = this.samplePos;
+      this.nextTrig = this.samplePos;
+    }
+  }
+
+  setVolume(v) {
+    this.volume = Math.max(0, Math.min(1, v));
+  }
+
+  // Tempo follows movement: 0..1 across the style's range, or null to use the
+  // seed's tempo. Takes effect gradually from the next bar lines.
+  setTempoFactor(f) {
+    this.composer.setTempoFactor(f);
+  }
+
+  // Manual tempo in bpm (null = movement/seed tempo). Applies immediately,
+  // mid-bar, so a slider feels direct.
+  setTempoOverride(bpm) {
+    this.composer.setTempoOverride(bpm);
+    const b = this.composer.tempoOv;
+    if (b !== null && this.plan) {
+      this.stepLen = (this.sr * 60) / b / 4;
+      this.delay.setTime((this.plan.fx.delayBeats * 60) / b);
+    }
+  }
+
+  // Replace the lead voice with a named patch (and force the lead line on,
+  // in that instrument's range). name = null restores the style's own lead.
+  setLeadPatch(name, lo, hi) {
+    const p = name ? PATCHES[name] : null;
+    this.leadPatch = p || null;
+    this.composer.setLeadOverride(p ? { lo: lo || 55, hi: hi || 88 } : null);
+  }
+
+  _rand() {
+    this.phSeed = (Math.imul(this.phSeed, 1664525) + 1013904223) >>> 0;
+    return this.phSeed / 4294967296;
+  }
+
+  _beginBar() {
+    if (this.composer.hasPending()) {
+      // New place: let the old harmony ring out naturally.
+      for (const v of this.voices) if (v.active) v.release();
+    }
+    const plan = this.composer.nextBar();
+    this.plan = plan;
+    this.stepLen = (this.sr * 60) / plan.bpm / 4;
+    const fx = plan.fx;
+    this.delay.setTime((fx.delayBeats * 60) / plan.bpm);
+    this.delay.setFeedback(fx.delayFb);
+    this.reverb.setSize(fx.reverbSize);
+    this.dlyTarget = fx.delayMix * 1.6;
+    this.revTarget = fx.reverbMix * 3;
+    this.brightTarget = plan.bright;
+    this.trimTarget = plan.trim;
+    this.duckAmt = plan.duck;
+    if (this.onBar) this.onBar(plan, this.composer.info());
+  }
+
+  _trigger(ev) {
+    const plan = this.plan;
+    const v = ev.voice;
+    if (v === 'kick' || v === 'snare' || v === 'hat' || v === 'tom') {
+      let slot = null;
+      for (const d of this.drums) {
+        if (!d.active) {
+          slot = d;
+          break;
+        }
+      }
+      if (!slot) {
+        slot = this.drums[0];
+        for (const d of this.drums) if (d.age > slot.age) slot = d;
+      }
+      slot.start(v, ev.note, ev.vel);
+      if (v === 'kick') this.duck = 1;
+      return;
+    }
+    const patch = (v === 'lead' && this.leadPatch) || PATCHES[plan.patches[v]];
+    if (!patch) return;
+    let slot = null;
+    for (const s of this.voices) {
+      if (!s.active) {
+        slot = s;
+        break;
+      }
+    }
+    if (!slot) {
+      // Steal: quietest releasing voice, else the oldest.
+      let best = null;
+      for (const s of this.voices) {
+        if (s.stage === 4 && (!best || s.env < best.env)) best = s;
+      }
+      if (!best) {
+        best = this.voices[0];
+        for (const s of this.voices) if (s.age > best.age) best = s;
+      }
+      slot = best;
+    }
+    const ph0 = this._rand();
+    const pos = this._rand() * 2 - 1;
+    slot.start(ev.note, ev.vel, ev.len * this.stepLen, patch, this.bright, pos, ph0);
+  }
+
+  _fireStep() {
+    if (this.stepIndex === 0) this._beginBar();
+    const evs = this.plan.steps[this.stepIndex];
+    for (let i = 0; i < evs.length; i++) this._trigger(evs[i]);
+    this.stepIndex++;
+    if (this.stepIndex >= STEPS_PER_BAR) this.stepIndex = 0;
+    this.gridTime += this.stepLen;
+    // 16th-note swing delays odd steps; eighth-note swing delays the off-beat
+    // eighths (steps 2, 6, 10, 14), e.g. a triplet feel for jazz.
+    const si = this.stepIndex;
+    const swingOff = ((si & 1 ? this.plan.swing : 0) + ((si & 3) === 2 ? this.plan.swing8 : 0)) * this.stepLen;
+    this.nextTrig = this.gridTime + swingOff;
+  }
+
+  // Render n frames into outL/outR (Float32Array). Any n.
+  render(outL, outR, n) {
+    let done = 0;
+    while (done < n) {
+      const want = Math.min(n - done, MAX_CHUNK);
+      let chunk = want;
+      if (this.running) {
+        // Fire all steps that are due at or before the chunk start.
+        while (this.nextTrig <= this.samplePos) this._fireStep();
+        const until = Math.ceil(this.nextTrig - this.samplePos);
+        if (until < chunk) chunk = Math.max(1, until);
+      }
+      this._renderChunk(outL, outR, done, chunk);
+      this.samplePos += chunk;
+      done += chunk;
+    }
+  }
+
+  _renderChunk(outL, outR, off, n) {
+    const bL = this.bL;
+    const bR = this.bR;
+    const bREV = this.bREV;
+    const bDLY = this.bDLY;
+    const dL = this.dL;
+    const dR = this.dR;
+    const dREV = this.dREV;
+    bL.fill(0, 0, n);
+    bR.fill(0, 0, n);
+    bREV.fill(0, 0, n);
+    bDLY.fill(0, 0, n);
+    dL.fill(0, 0, n);
+    dR.fill(0, 0, n);
+    dREV.fill(0, 0, n);
+
+    // Time-based smoothing so the result does not depend on block size.
+    const kSlow = 1 - Math.exp(-n / (this.sr * 0.5));
+    const kFast = 1 - Math.exp(-n / (this.sr * 0.3));
+    this.bright += (this.brightTarget - this.bright) * kSlow;
+    this.dlyLevel += (this.dlyTarget - this.dlyLevel) * kFast;
+    this.revLevel += (this.revTarget - this.revLevel) * kFast;
+    this.trim += (this.trimTarget - this.trim) * kSlow;
+
+    for (const v of this.voices) {
+      if (!v.active) continue;
+      if (v.stage !== 4) v.setBright(this.bright);
+      v.render(n, 0, bL, bR, bREV, bDLY);
+    }
+    for (const d of this.drums) {
+      if (d.active) d.render(n, 0, dL, dR, dREV);
+    }
+
+    // Sidechain-style duck of the synth bus on each kick.
+    let duck = this.duck;
+    const amt = this.duckAmt;
+    const dc = this.duckCoef;
+    for (let i = 0; i < n; i++) {
+      const g = 1 - amt * duck;
+      bL[i] *= g;
+      bR[i] *= g;
+      bREV[i] *= g;
+      bDLY[i] *= g;
+      bREV[i] += dREV[i];
+      duck *= dc;
+    }
+    this.duck = duck;
+
+    this.delay.process(n, 0, bDLY, bL, bR, this.dlyLevel);
+    this.reverb.process(n, 0, bREV, bL, bR, this.revLevel);
+
+    // Master: mix drums, volume, DC block, soft clip.
+    const target = this.running ? this.volume * this.trim : 0;
+    let vol = this.volNow;
+    const vstep = (target - vol) / Math.max(1, this.sr * 0.05);
+    let peak = this.peak * 0.9;
+    // Filter state in locals: object-field double stores allocate in V8.
+    let xl = this.dcXl;
+    let xr = this.dcXr;
+    let ylPrev = this.dcYl;
+    let yrPrev = this.dcYr;
+    for (let i = 0; i < n; i++) {
+      vol += vstep;
+      if ((vstep > 0 && vol > target) || (vstep < 0 && vol < target)) vol = target;
+      const l = (bL[i] + dL[i]) * vol;
+      const r = (bR[i] + dR[i]) * vol;
+      const yl = l - xl + 0.995 * ylPrev;
+      const yr = r - xr + 0.995 * yrPrev;
+      xl = l;
+      xr = r;
+      ylPrev = yl;
+      yrPrev = yr;
+      const ol = softClip(yl);
+      const or = softClip(yr);
+      outL[off + i] = ol;
+      outR[off + i] = or;
+      const a = ol < 0 ? -ol : ol;
+      const b = or < 0 ? -or : or;
+      if (a > peak) peak = a;
+      if (b > peak) peak = b;
+    }
+    this.dcXl = xl;
+    this.dcXr = xr;
+    this.dcYl = ylPrev + 1e-20;
+    this.dcYr = yrPrev + 1e-20;
+    this.volNow = vol;
+    this.peak = peak;
+  }
+}
+
+
+/* ---- worklet.js ---- */
+// AudioWorklet entry point. build.mjs bundles this with the engine modules
+// into worklet.bundle.js (a single classic script, no import resolution
+// inside the worklet scope).
+
+
+class GeoSynthProcessor extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this.engine = new Engine(sampleRate);
+    this.engine.onBar = (plan, info) => {
+      this.port.postMessage({
+        type: 'bar',
+        info,
+        bar: plan.bar,
+        section: plan.section,
+        layers: plan.layers,
+        bpm: plan.bpm,
+      });
+    };
+    this.port.onmessage = (e) => {
+      const m = e.data;
+      if (!m) return;
+      if (m.type === 'seed') this.engine.setSeed(m.seed);
+      else if (m.type === 'volume') this.engine.setVolume(m.value);
+      else if (m.type === 'tempo') this.engine.setTempoFactor(m.factor);
+      else if (m.type === 'bpm') this.engine.setTempoOverride(m.bpm);
+      else if (m.type === 'lead') this.engine.setLeadPatch(m.patch, m.lo, m.hi);
+    };
+    this.port.postMessage({ type: 'ready', sampleRate });
+  }
+
+  process(inputs, outputs) {
+    const out = outputs[0];
+    if (!out || !out.length) return true;
+    const l = out[0];
+    const r = out.length > 1 ? out[1] : out[0];
+    this.engine.render(l, r, l.length);
+    return true;
+  }
+}
+
+registerProcessor('geosynth', GeoSynthProcessor);
+
+
+})();
+
+</script>
+<script>
+window.GEOSYNTH_NO_SW = true;
+try {
+  window.GEOSYNTH_WORKLET_URL = URL.createObjectURL(
+    new Blob([document.getElementById('worklet-src').textContent], { type: 'text/javascript' })
+  );
+} catch (e) {
+  /* the app falls back to a main-thread engine */
+}
+</script>
+<script>
+(function () {
+"use strict";
+
+/* ---- engine/rng.js ---- */
+// Deterministic integer hashing and PRNG.
+// Everything here is 32-bit integer math (Math.imul), so the same seed gives
+// the same sequence on every JS engine. No Math.random anywhere in the engine.
+
+function mix32(x) {
+  x = x >>> 0;
+  x = Math.imul(x ^ (x >>> 16), 0x85ebca6b);
+  x = Math.imul(x ^ (x >>> 13), 0xc2b2ae35);
+  return (x ^ (x >>> 16)) >>> 0;
+}
+
+// Hash two signed 32-bit ints plus a salt into one u32.
+function hash3(a, b, salt) {
+  let h = mix32(salt ^ 0x9e3779b9);
+  h = mix32(h ^ mix32(a | 0));
+  h = mix32(h ^ Math.imul(mix32(b | 0), 0x27d4eb2f));
+  return h >>> 0;
+}
+
+// sfc32: small, fast, good quality.
+class Rng {
+  constructor(seed) {
+    this.reseed(seed);
+  }
+
+  reseed(seed) {
+    const s = seed >>> 0;
+    this.a = mix32(s ^ 0x243f6a88);
+    this.b = mix32(s ^ 0x85a308d3);
+    this.c = mix32(s ^ 0x13198a2e);
+    this.d = 1;
+    for (let i = 0; i < 12; i++) this.next();
+  }
+
+  next() {
+    const t = (((this.a + this.b) | 0) + this.d) | 0;
+    this.d = (this.d + 1) | 0;
+    this.a = this.b ^ (this.b >>> 9);
+    this.b = (this.c + (this.c << 3)) | 0;
+    this.c = (this.c << 21) | (this.c >>> 11);
+    this.c = (this.c + t) | 0;
+    return t >>> 0;
+  }
+
+  // Uniform integer in [0, n). Exact for n < 2^21.
+  below(n) {
+    return Math.floor((this.next() / 4294967296) * n);
+  }
+
+  // Uniform float in [0, 1).
+  float() {
+    return this.next() / 4294967296;
+  }
+
+  // True with probability p (0..1).
+  chance(p) {
+    return this.float() < p;
+  }
+
+  // Integer in [lo, hi] inclusive.
+  range(lo, hi) {
+    return lo + this.below(hi - lo + 1);
+  }
+
+  pick(arr) {
+    return arr[this.below(arr.length)];
+  }
+
+  // Weighted pick: weights is an array of non-negative numbers.
+  weighted(weights) {
+    let total = 0;
+    for (let i = 0; i < weights.length; i++) total += weights[i];
+    let r = this.float() * total;
+    for (let i = 0; i < weights.length; i++) {
+      r -= weights[i];
+      if (r < 0) return i;
+    }
+    return weights.length - 1;
+  }
+}
+
+// Derive an independent stream from a base seed and a salt.
+function stream(seed, salt) {
+  return new Rng(mix32((seed >>> 0) ^ Math.imul(salt | 0, 0x9e3779b1)));
+}
+
+
+/* ---- engine/theory.js ---- */
+// Music theory helpers and the style table. Pure integer/array logic, no audio.
+
+const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+
+const SCALES = {
+  ionian: [0, 2, 4, 5, 7, 9, 11],
+  dorian: [0, 2, 3, 5, 7, 9, 10],
+  phrygian: [0, 1, 3, 5, 7, 8, 10],
+  lydian: [0, 2, 4, 6, 7, 9, 11],
+  mixolydian: [0, 2, 4, 5, 7, 9, 10],
+  aeolian: [0, 2, 3, 5, 7, 8, 10],
+  harmonicMinor: [0, 2, 3, 5, 7, 8, 11],
+};
+
+const PENT = {
+  major: [0, 2, 4, 7, 9],
+  minor: [0, 3, 5, 7, 10],
+};
+
+// Which chord-transition matrix suits each mode, and which degrees give it
+// its colour (extra weight in the Markov chain).
+const SCALE_INFO = {
+  ionian: { mat: 'major', favor: {} },
+  lydian: { mat: 'major', favor: { 1: 2.2 } },
+  mixolydian: { mat: 'major', favor: { 6: 2.0 } },
+  dorian: { mat: 'minor', favor: { 3: 1.8 } },
+  aeolian: { mat: 'minor', favor: {} },
+  phrygian: { mat: 'minor', favor: { 1: 2.6 } },
+  harmonicMinor: { mat: 'minor', favor: { 4: 1.8 } },
+};
+
+// Row = from-degree, column = to-degree (0..6).
+const MATRIX = {
+  major: [
+    [0.0, 0.08, 0.1, 0.25, 0.3, 0.22, 0.05],
+    [0.05, 0.0, 0.05, 0.1, 0.5, 0.1, 0.2],
+    [0.1, 0.1, 0.0, 0.3, 0.1, 0.4, 0.0],
+    [0.25, 0.1, 0.05, 0.0, 0.35, 0.15, 0.1],
+    [0.5, 0.05, 0.05, 0.1, 0.0, 0.25, 0.05],
+    [0.1, 0.25, 0.05, 0.35, 0.2, 0.0, 0.05],
+    [0.6, 0.05, 0.1, 0.05, 0.1, 0.1, 0.0],
+  ],
+  minor: [
+    [0.0, 0.03, 0.12, 0.25, 0.15, 0.25, 0.2],
+    [0.1, 0.0, 0.1, 0.1, 0.4, 0.1, 0.2],
+    [0.1, 0.05, 0.0, 0.2, 0.1, 0.3, 0.25],
+    [0.25, 0.05, 0.1, 0.0, 0.2, 0.15, 0.25],
+    [0.4, 0.02, 0.08, 0.1, 0.0, 0.3, 0.1],
+    [0.1, 0.05, 0.3, 0.2, 0.1, 0.0, 0.25],
+    [0.35, 0.03, 0.25, 0.1, 0.1, 0.17, 0.0],
+  ],
+};
+
+// ---------------------------------------------------------------------------
+// Scale helpers
+
+// Semitone offset of scale index `idx` (any integer, may be negative or
+// beyond the scale length; wraps by octaves).
+function scaleNote(scale, idx) {
+  const n = scale.length;
+  const oct = Math.floor(idx / n);
+  const i = idx - oct * n;
+  return scale[i] + 12 * oct;
+}
+
+// Index in `scale` (extended across octaves) whose pitch is nearest to
+// `semi` semitones above the key root.
+function nearestIdx(scale, semi) {
+  const n = scale.length;
+  let oct = Math.floor(semi / 12);
+  let best = 0;
+  let bestD = 1e9;
+  for (let o = oct - 1; o <= oct + 1; o++) {
+    for (let i = 0; i < n; i++) {
+      const d = Math.abs(scale[i] + 12 * o - semi);
+      if (d < bestD) {
+        bestD = d;
+        best = o * n + i;
+      }
+    }
+  }
+  return best;
+}
+
+// Chord tones (semitones above key root) for scale degree `d` (0..6) of a
+// 7-note scale. opts: seventh (bool), sus ('2' | '4' | null).
+function chordTones(scale, d, opts) {
+  const o = opts || {};
+  const third = o.sus === '2' ? d + 1 : o.sus === '4' ? d + 3 : d + 2;
+  const idxs = [d, third, d + 4];
+  if (o.seventh) idxs.push(d + 6);
+  return idxs.map((i) => scaleNote(scale, i));
+}
+
+// Fold a pitch into [lo, lo + 12).
+function fold(midi, lo) {
+  while (midi < lo) midi += 12;
+  while (midi >= lo + 12) midi -= 12;
+  return midi;
+}
+
+// Markov progression of `len` degrees.
+function makeProgression(rng, scaleName, len, stay, startDegrees) {
+  const info = SCALE_INFO[scaleName];
+  const mat = MATRIX[info.mat];
+  const prog = [];
+  let cur = rng.pick(startDegrees);
+  prog.push(cur);
+  while (prog.length < len) {
+    if (rng.chance(stay)) {
+      prog.push(cur);
+      continue;
+    }
+    const w = mat[cur].map((x, j) => x * (info.favor[j] || 1));
+    cur = rng.weighted(w);
+    prog.push(cur);
+  }
+  return prog;
+}
+
+// Euclidean rhythm: k hits spread over n steps. Returns array of 0/1.
+function euclid(k, n, rot) {
+  const out = new Array(n).fill(0);
+  if (k <= 0) return out;
+  let acc = 0;
+  for (let i = 0; i < n; i++) {
+    acc += k;
+    if (acc >= n) {
+      acc -= n;
+      out[(i + (rot || 0)) % n] = 1;
+    }
+  }
+  return out;
+}
+
+// Parse a drum pattern string like "x...x...x...x..." into step indices.
+function pat(str) {
+  const out = [];
+  for (let i = 0; i < str.length; i++) if (str[i] === 'x') out.push(i);
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Styles
+
+const STYLES = [
+  {
+    id: 'drift',
+    trim: 0.7,
+    name: 'Drift',
+    blurb: 'slow ambient pads, distant bells',
+    bpm: [54, 70],
+    scales: ['lydian', 'ionian', 'dorian'],
+    pent: true,
+    chordBars: 2,
+    stay: 0.25,
+    sevenths: 0.5,
+    sus: 0.35,
+    starts: [0, 0, 5, 3],
+    patches: { pad: 'padSoft', bass: 'bassSub', arp: 'arpBell', lead: 'leadFlute' },
+    layerProb: { pad: 1.0, bass: 0.6, arp: 0.25, lead: 0.55, drums: 0.0 },
+    bass: { mode: 'drone' },
+    arp: { mode: 'random', rate: 4, octaves: 2, vel: 0.45, gate: 1.6 },
+    lead: { density: 0.16, vel: 0.55, minGap: 3 },
+    drums: null,
+    swing: 0,
+    fx: { delayBeats: 0.75, delayFb: 0.5, delayMix: 0.3, reverbMix: 0.42, reverbSize: 0.92 },
+    bright: [0.3, 0.6],
+  },
+  {
+    id: 'neon',
+    trim: 1.33,
+    name: 'Neon',
+    blurb: 'synthwave: pulsing bass, arps, gated snare',
+    bpm: [96, 116],
+    scales: ['aeolian', 'dorian', 'aeolian'],
+    pent: false,
+    chordBars: 1,
+    stay: 0.1,
+    sevenths: 0.25,
+    sus: 0.05,
+    starts: [0, 0, 5],
+    patches: { pad: 'padSaw', bass: 'bassSaw', arp: 'arpSaw', lead: 'leadSax' },
+    layerProb: { pad: 0.9, bass: 0.95, arp: 0.8, lead: 0.55, drums: 0.9 },
+    bass: { mode: 'pulse' },
+    arp: { mode: 'updown', rate: 2, octaves: 2, vel: 0.5, gate: 0.85 },
+    lead: { density: 0.3, vel: 0.7, minGap: 1, lo: 58, hi: 82 },
+    drums: { kick: 'x.......x.......', snare: '....x.......x...', hat: 'eighth', ghost: 0.1, level: 0.9 },
+    swing: 0,
+    fx: { delayBeats: 0.75, delayFb: 0.38, delayMix: 0.22, reverbMix: 0.22, reverbSize: 0.78 },
+    bright: [0.5, 0.9],
+  },
+  {
+    id: 'pulse',
+    trim: 1.3,
+    name: 'Pulse',
+    blurb: 'driving house: four on the floor, offbeat bass',
+    bpm: [122, 134],
+    scales: ['phrygian', 'aeolian', 'harmonicMinor'],
+    pent: false,
+    chordBars: 2,
+    stay: 0.45,
+    sevenths: 0.1,
+    sus: 0.0,
+    starts: [0, 0, 0, 1],
+    patches: { pad: 'padDark', bass: 'bassPulse', arp: 'arpPulse', lead: 'leadPulse' },
+    layerProb: { pad: 0.6, bass: 0.95, arp: 0.85, lead: 0.25, drums: 1.0 },
+    bass: { mode: 'offbeat' },
+    arp: { mode: 'seq', rate: 1, octaves: 2, vel: 0.42, gate: 0.6 },
+    lead: { density: 0.18, vel: 0.6, minGap: 2 },
+    drums: { kick: 'x...x...x...x...', snare: '....x.......x...', hat: 'offbeat', ghost: 0.05, level: 1.0 },
+    swing: 0.02,
+    fx: { delayBeats: 0.75, delayFb: 0.45, delayMix: 0.2, reverbMix: 0.16, reverbSize: 0.7 },
+    bright: [0.35, 0.95],
+  },
+  {
+    id: 'glass',
+    trim: 0.8,
+    name: 'Glass',
+    blurb: 'dreamy pentatonic plucks over soft pads',
+    bpm: [76, 92],
+    scales: ['ionian', 'lydian', 'mixolydian'],
+    pent: true,
+    chordBars: 1,
+    stay: 0.15,
+    sevenths: 0.35,
+    sus: 0.2,
+    starts: [0, 3, 0, 5],
+    patches: { pad: 'padSoft', bass: 'bassSub', arp: 'arpPluck', lead: 'leadVibes' },
+    layerProb: { pad: 0.9, bass: 0.7, arp: 0.95, lead: 0.5, drums: 0.4 },
+    bass: { mode: 'sub' },
+    arp: { mode: 'random', rate: 2, octaves: 3, vel: 0.5, gate: 1.3 },
+    lead: { density: 0.2, vel: 0.6, minGap: 2 },
+    drums: { kick: 'x.......x.......', snare: null, hat: 'sparse', ghost: 0.0, level: 0.5 },
+    swing: 0.05,
+    fx: { delayBeats: 0.75, delayFb: 0.55, delayMix: 0.35, reverbMix: 0.38, reverbSize: 0.88 },
+    bright: [0.45, 0.8],
+  },
+  {
+    id: 'abyss',
+    trim: 0.72,
+    name: 'Abyss',
+    blurb: 'dark drones, sparse low tones',
+    bpm: [50, 64],
+    scales: ['phrygian', 'harmonicMinor', 'aeolian'],
+    pent: false,
+    chordBars: 2,
+    stay: 0.5,
+    sevenths: 0.3,
+    sus: 0.3,
+    starts: [0, 0, 1],
+    patches: { pad: 'padChoir', bass: 'bassSub', arp: 'arpBell', lead: 'leadFM' },
+    layerProb: { pad: 1.0, bass: 0.9, arp: 0.15, lead: 0.5, drums: 0.0 },
+    bass: { mode: 'drone' },
+    arp: { mode: 'random', rate: 4, octaves: 2, vel: 0.35, gate: 2.0 },
+    lead: { density: 0.1, vel: 0.5, minGap: 4 },
+    drums: null,
+    swing: 0,
+    fx: { delayBeats: 1.5, delayFb: 0.55, delayMix: 0.28, reverbMix: 0.5, reverbSize: 0.96 },
+    bright: [0.2, 0.5],
+  },
+  {
+    id: 'arcade',
+    trim: 1.36,
+    name: 'Arcade',
+    blurb: 'chiptune: pulse waves and fast arps',
+    bpm: [132, 150],
+    scales: ['mixolydian', 'ionian', 'dorian'],
+    pent: false,
+    chordBars: 1,
+    stay: 0.1,
+    sevenths: 0.0,
+    sus: 0.0,
+    starts: [0, 0, 5, 3],
+    patches: { pad: 'padPulse', bass: 'bassPulse', arp: 'arpPulse', lead: 'leadPulse' },
+    layerProb: { pad: 0.3, bass: 0.95, arp: 0.9, lead: 0.85, drums: 0.9 },
+    bass: { mode: 'octave' },
+    arp: { mode: 'up', rate: 1, octaves: 2, vel: 0.4, gate: 0.5 },
+    lead: { density: 0.45, vel: 0.65, minGap: 1 },
+    drums: { kick: 'x.....x.x.......', snare: '....x.......x...', hat: 'eighth', ghost: 0.15, level: 0.8 },
+    swing: 0,
+    fx: { delayBeats: 0.5, delayFb: 0.25, delayMix: 0.12, reverbMix: 0.08, reverbSize: 0.5 },
+    bright: [0.7, 1.0],
+  },
+  {
+    id: 'chill',
+    trim: 0.83,
+    name: 'Chill',
+    blurb: 'lo-fi chillwave: seventh chords, swung beat',
+    bpm: [78, 92],
+    scales: ['dorian', 'ionian', 'mixolydian'],
+    pent: true,
+    chordBars: 1,
+    stay: 0.1,
+    sevenths: 0.85,
+    sus: 0.1,
+    starts: [0, 1, 3, 5],
+    patches: { pad: 'padFM', bass: 'bassSub', arp: 'arpPluck', lead: 'leadClarinet' },
+    layerProb: { pad: 1.0, bass: 0.9, arp: 0.35, lead: 0.7, drums: 0.9 },
+    bass: { mode: 'walk' },
+    arp: { mode: 'updown', rate: 2, octaves: 2, vel: 0.35, gate: 1.0 },
+    lead: { density: 0.22, vel: 0.6, minGap: 2 },
+    drums: { kick: 'x.....x...x.....', snare: '....x.......x...', hat: 'eighth', ghost: 0.2, level: 0.75 },
+    swing: 0.18,
+    fx: { delayBeats: 0.75, delayFb: 0.4, delayMix: 0.25, reverbMix: 0.3, reverbSize: 0.82 },
+    bright: [0.3, 0.65],
+  },
+  {
+    id: 'epic',
+    trim: 1.34,
+    name: 'Epic',
+    blurb: 'cinematic: big saw pads, rising arps, toms',
+    bpm: [70, 90],
+    scales: ['harmonicMinor', 'aeolian', 'dorian'],
+    pent: false,
+    chordBars: 1,
+    stay: 0.1,
+    sevenths: 0.15,
+    sus: 0.05,
+    starts: [0, 0, 5],
+    patches: { pad: 'padStrings', bass: 'bassSaw', arp: 'arpSaw', lead: 'leadTrumpet' },
+    layerProb: { pad: 1.0, bass: 0.85, arp: 0.7, lead: 0.65, drums: 0.55 },
+    bass: { mode: 'pulse' },
+    arp: { mode: 'up', rate: 2, octaves: 3, vel: 0.4, gate: 0.9 },
+    lead: { density: 0.14, vel: 0.75, minGap: 4 },
+    drums: { kick: 'x.......x.x.....', snare: '............x...', hat: null, ghost: 0.0, level: 0.9 },
+    swing: 0,
+    fx: { delayBeats: 0.75, delayFb: 0.4, delayMix: 0.2, reverbMix: 0.4, reverbSize: 0.92 },
+    bright: [0.4, 0.85],
+  },
+  {
+    id: 'smoke',
+    trim: 1.67,
+    name: 'Smoke',
+    blurb: 'late-night jazz: sax, walking bass, swung brushes',
+    bpm: [68, 94],
+    scales: ['dorian', 'mixolydian', 'aeolian'],
+    pent: false,
+    chordBars: 1,
+    stay: 0.05,
+    sevenths: 0.95,
+    sus: 0.1,
+    starts: [0, 1, 3, 5],
+    patches: { pad: 'padFM', bass: 'bassUpright', arp: 'arpVibes', lead: 'leadSax' },
+    layerProb: { pad: 0.95, bass: 0.95, arp: 0.25, lead: 0.95, drums: 0.9 },
+    bass: { mode: 'walk' },
+    arp: { mode: 'updown', rate: 2, octaves: 2, vel: 0.3, gate: 1.1 },
+    lead: { density: 0.3, vel: 0.7, minGap: 1, lo: 55, hi: 80 },
+    drums: { kick: 'x.......x.......', snare: '....x.......x...', hat: 'eighth', ghost: 0.25, level: 0.45 },
+    swing: 0.05,
+    swing8: 0.6,
+    fx: { delayBeats: 0.75, delayFb: 0.3, delayMix: 0.15, reverbMix: 0.3, reverbSize: 0.8 },
+    bright: [0.4, 0.75],
+  },
+  {
+    id: 'techno',
+    trim: 1.25,
+    name: 'Techno',
+    blurb: 'hard techno: kick on every beat, acid bass, 16th hats, stabs',
+    bpm: [128, 146],
+    scales: ['phrygian', 'aeolian', 'phrygian'],
+    pent: false,
+    chordBars: 2,
+    stay: 0.75, // mostly sits on the root: hypnotic, not melodic
+    sevenths: 0.0,
+    sus: 0.0,
+    starts: [0, 0, 0],
+    patches: { pad: 'padDark', bass: 'bassAcid', arp: 'arpStab', lead: 'leadSaw' },
+    layerProb: { pad: 0.5, bass: 1.0, arp: 0.8, lead: 0.2, drums: 1.0 },
+    introDrums: true,
+    bass: { mode: 'acid' },
+    arp: { mode: 'seq', rate: 2, octaves: 2, vel: 0.4, gate: 0.5 },
+    lead: { density: 0.12, vel: 0.6, minGap: 2, lo: 60, hi: 84 },
+    drums: { kick: 'x...x...x...x...', snare: '....x.......x...', hat: 'sixteenth', ghost: 0.0, level: 1.0 },
+    swing: 0,
+    fx: { delayBeats: 0.75, delayFb: 0.4, delayMix: 0.18, reverbMix: 0.14, reverbSize: 0.65 },
+    bright: [0.45, 1.0],
+  },
+];
+
+
+/* ---- engine/composer.js ---- */
+// Procedural composer. Pure function of (seed, bar count): no audio, no
+// floating-point state that depends on the platform beyond IEEE basics, and
+// every random draw comes from a seeded stream, so the same seed always
+// produces the same music.
+//
+// nextBar() returns a plan for one bar (16 sixteenth-note steps):
+//   steps[s] = array of note events { voice, note, vel, len }
+// voices: pad, bass, arp, lead, kick, snare, hat, tom
+
+
+const STEPS_PER_BAR = 16;
+const MAX_BPM_STEP = 12;
+// At full speed (100 km/h) every style reaches at least this tempo, so a slow
+// style like Abyss does not top out at 70 bpm.
+const FOLLOW_TOP_BPM = 160;
+const BPM_MIN = 40;
+const BPM_MAX = 220;
+const METER = [1, 0.15, 0.3, 0.15, 0.6, 0.15, 0.3, 0.15, 0.8, 0.15, 0.3, 0.15, 0.6, 0.15, 0.3, 0.15];
+const LAYERS = ['pad', 'bass', 'arp', 'lead', 'drums'];
+
+class Composer {
+  constructor() {
+    this.pending = null;
+    this.s = null;
+    this.barCount = 0;
+    this.leadOv = null;
+    this.tempoFactor = null;
+    this.tempoOv = null;
+    this.curBpm = null;
+  }
+
+  // seed: { style: -1 (auto) | index, coarse: u32, fine: u32 }
+  setSeed(seed) {
+    this.pending = { style: seed.style, coarse: seed.coarse >>> 0, fine: seed.fine >>> 0 };
+  }
+
+  hasPending() {
+    return this.pending !== null;
+  }
+
+  // Tempo follows movement: factor 0..1 maps across the style's tempo range
+  // (a little beyond it at both ends). null = use the tempo from the seed.
+  // Applied gradually at bar lines (see nextBar).
+  setTempoFactor(f) {
+    this.tempoFactor = f === null || f === undefined ? null : Math.max(0, Math.min(1, f));
+  }
+
+  // Manual tempo (BPM slider): wins over movement and the seed, and applies at
+  // once rather than being slewed. null returns to movement/seed tempo.
+  setTempoOverride(bpm) {
+    if (bpm === null || bpm === undefined || !Number.isFinite(bpm)) {
+      this.tempoOv = null;
+      return;
+    }
+    this.tempoOv = Math.max(BPM_MIN, Math.min(BPM_MAX, Math.round(bpm)));
+    this.curBpm = this.tempoOv;
+  }
+
+  // Force the lead line on (the user picked a lead instrument) and keep it in
+  // that instrument's range. ov = { lo, hi } midi notes, or null for the
+  // style's own arrangement.
+  setLeadOverride(ov) {
+    this.leadOv = ov ? { lo: ov.lo, hi: ov.hi } : null;
+  }
+
+  info() {
+    const s = this.s;
+    if (!s) return null;
+    return {
+      style: s.styleIdx,
+      styleName: s.style.name,
+      key: NOTE_NAMES[s.pc],
+      scale: s.scaleName,
+      bpm: this.curBpm === null ? s.bpm : this.curBpm,
+    };
+  }
+
+  // ---------------------------------------------------------------- latching
+
+  _latch(seed) {
+    const prev = this.s;
+    const styleIdx =
+      seed.style >= 0 && seed.style < STYLES.length
+        ? seed.style
+        : mix32(seed.coarse ^ 0x57) % STYLES.length;
+    const style = STYLES[styleIdx];
+    const full = !prev || prev.styleIdx !== styleIdx || prev.coarse !== seed.coarse;
+    if (full) this.curBpm = null; // new place/style: take its tempo straight away
+
+    const s = {
+      styleIdx,
+      style,
+      coarse: seed.coarse,
+      fine: seed.fine,
+      sectionIdx: 0,
+      barInSection: 0,
+      sectionBars: 0,
+      prog: [0, 0, 0, 0],
+      motifSeed: 1,
+      layers: {},
+      bright: 0.5,
+      densMul: 1,
+      groove: null,
+      seqPat: [],
+      seqGate: [],
+      answer: false,
+      leadMidi: 74,
+      hum: stream(seed.fine, 77),
+    };
+
+    // Key, mode and tempo come from the coarse cell (stable over ~10 km).
+    const kr = stream(seed.coarse, 11);
+    s.pc = kr.below(12);
+    s.scaleName = style.scales[kr.below(style.scales.length)];
+    s.scale = SCALES[s.scaleName];
+    if (style.pent && s.scaleName !== 'harmonicMinor') {
+      const major = ['ionian', 'lydian', 'mixolydian'].includes(s.scaleName);
+      s.melScale = major ? PENT.major : PENT.minor;
+    } else {
+      s.melScale = s.scale;
+    }
+    s.bpm = style.bpm[0] + kr.below(style.bpm[1] - style.bpm[0] + 1);
+
+    s.sectionBars = 8 * style.chordBars;
+    this.s = s;
+    this._newSection(full);
+  }
+
+  _newSection(intro) {
+    const s = this.s;
+    const style = s.style;
+    const secSeed = mix32((s.fine ^ Math.imul(s.sectionIdx + 1, 0x9e3779b1)) >>> 0);
+    const r = stream(secSeed, 1);
+
+    // Harmony: keep the last progression 40% of the time so ideas come back.
+    const keepProg = s.sectionIdx > 0 && r.chance(0.4);
+    const pr = stream(secSeed, 2);
+    if (!keepProg) {
+      s.prog = makeProgression(pr, s.scaleName, 4, style.stay, style.starts);
+    }
+    if (!(s.sectionIdx > 0 && r.chance(0.5))) s.motifSeed = stream(secSeed, 3).next();
+    s.answer = r.chance(0.6);
+
+    // Arrangement: which layers play in this section.
+    const layers = {};
+    if (intro) {
+      const cand = ['pad', 'bass', 'arp']
+        .map((n) => [n, style.layerProb[n]])
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 2);
+      for (const n of LAYERS) layers[n] = false;
+      for (const [n] of cand) layers[n] = true;
+      if (style.introDrums) layers.drums = true; // e.g. techno opens with the kick
+    } else {
+      let count = 0;
+      for (const n of LAYERS) {
+        layers[n] = r.chance(style.layerProb[n]);
+        if (layers[n]) count++;
+      }
+      if (count < 2) {
+        const top = LAYERS.map((n) => [n, style.layerProb[n]])
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 2);
+        for (const [n] of top) layers[n] = true;
+      }
+    }
+    if (!style.drums) layers.drums = false;
+    s.layers = layers;
+
+    s.bright = style.bright[0] + r.float() * (style.bright[1] - style.bright[0]);
+    s.densMul = 0.6 + r.float() * 0.8;
+
+    // Drum groove for the whole section.
+    if (style.drums) {
+      const d = style.drums;
+      const kick = style.drums.kick ? pat(d.kick) : [];
+      const gr = stream(secSeed, 4);
+      for (const g of [3, 7, 10, 11, 14, 15]) {
+        if (gr.chance(d.ghost * 0.4) && !kick.includes(g)) kick.push(g);
+      }
+      s.groove = { kick, snare: d.snare ? pat(d.snare) : [] };
+    }
+
+    // Arpeggio "seq" mode pattern.
+    const sr = stream(secSeed, 5);
+    s.seqPat = [];
+    s.seqGate = [];
+    for (let i = 0; i < 16; i++) {
+      s.seqPat.push(sr.below(6));
+      s.seqGate.push(sr.chance(0.78) ? 1 : 0);
+    }
+
+    s.barInSection = 0;
+    s.secSeed = secSeed;
+  }
+
+  // ---------------------------------------------------------------- planning
+
+  nextBar() {
+    if (this.pending) {
+      this._latch(this.pending);
+      this.pending = null;
+      this.barCount = 0;
+    } else if (!this.s) {
+      this._latch({ style: -1, coarse: 1, fine: 1 });
+    }
+    let s = this.s;
+    if (s.barInSection >= s.sectionBars) {
+      s.sectionIdx++;
+      this._newSection(false);
+    }
+
+    const style = s.style;
+
+    // Tempo: from the seed, or following movement speed. Moves at most
+    // MAX_BPM_STEP per bar so changes feel like accelerating, not jumping.
+    let targetBpm = s.bpm;
+    if (this.tempoFactor !== null) {
+      const lo = style.bpm[0] * 0.9;
+      const hi = Math.max(style.bpm[1] * 1.1, FOLLOW_TOP_BPM);
+      targetBpm = Math.round(lo + this.tempoFactor * (hi - lo));
+    }
+    if (this.tempoOv !== null) this.curBpm = this.tempoOv;
+    else if (this.curBpm === null) this.curBpm = targetBpm;
+    else this.curBpm += Math.max(-MAX_BPM_STEP, Math.min(MAX_BPM_STEP, targetBpm - this.curBpm));
+
+    const cb = style.chordBars;
+    const j = s.barInSection;
+    const prog = s.prog;
+    const progLen = 4 * cb;
+    const jj = j % progLen;
+    const chordIdx = Math.floor(jj / cb);
+    const posInChord = jj % cb;
+    const repeat = Math.floor(j / progLen);
+    const nextChordIdx = (chordIdx + (posInChord === cb - 1 ? 1 : 0)) % 4;
+    const degree = prog[chordIdx];
+    const nextDegree = prog[nextChordIdx];
+    const lastBar = j === s.sectionBars - 1;
+
+    const rr = stream(s.secSeed, 200 + j);
+    const opts = {
+      seventh: stream(s.secSeed, 300 + chordIdx).chance(style.sevenths),
+      sus: null,
+    };
+    const susR = stream(s.secSeed, 400 + chordIdx);
+    if (susR.chance(style.sus)) opts.sus = susR.chance(0.5) ? '2' : '4';
+    const tones = chordTones(s.scale, degree, opts);
+
+    const steps = [];
+    for (let i = 0; i < STEPS_PER_BAR; i++) steps.push([]);
+    const L = s.layers;
+    const hum = s.hum;
+
+    // ---- pad
+    if (L.pad && posInChord === 0) {
+      const notes = tones.map((t) => fold(48 + s.pc + t, 55)).sort((a, b) => a - b);
+      if (!L.bass) notes.unshift(fold(48 + s.pc + tones[0], 43));
+      for (const n of notes) {
+        steps[0].push({ voice: 'pad', note: n, vel: 0.5 + hum.float() * 0.08, len: STEPS_PER_BAR * cb });
+      }
+    }
+
+    // ---- bass
+    if (L.bass) this._planBass(steps, s, tones, degree, nextDegree, posInChord, rr, hum);
+
+    // ---- arp
+    if (L.arp) this._planArp(steps, s, tones, j, hum);
+
+    // ---- lead
+    if (L.lead || this.leadOv) this._planLead(steps, s, tones, j, jj, repeat, progLen, cb, lastBar);
+
+    // ---- drums
+    if (L.drums && style.drums) this._planDrums(steps, s, j, lastBar, rr, hum);
+
+    const t = s.sectionBars > 1 ? j / (s.sectionBars - 1) : 0;
+    const plan = {
+      steps,
+      bpm: this.curBpm,
+      swing: style.swing,
+      swing8: style.swing8 || 0,
+      fx: style.fx,
+      patches: style.patches,
+      bright: s.bright * (0.78 + 0.22 * t),
+      bar: this.barCount,
+      section: s.sectionIdx,
+      chordDegree: degree,
+      trim: style.trim || 1,
+      duck: L.drums && style.drums ? 0.4 : 0,
+      layers: { ...L, lead: !!(L.lead || this.leadOv) },
+    };
+    s.barInSection++;
+    this.barCount++;
+    return plan;
+  }
+
+  _planBass(steps, s, tones, degree, nextDegree, posInChord, rr, hum) {
+    const style = s.style;
+    const cb = style.chordBars;
+    const root = fold(36 + s.pc + s.scale[degree], 36);
+    const mode = style.bass.mode;
+    const push = (st, note, vel, len) =>
+      steps[st].push({ voice: 'bass', note, vel: vel * (0.92 + hum.float() * 0.08), len });
+    if (mode === 'sub' || mode === 'drone') {
+      if (posInChord === 0) push(0, root, 0.8, STEPS_PER_BAR * cb - 0.5);
+    } else if (mode === 'pulse') {
+      const fifth = rr.chance(0.3);
+      for (let st = 0; st < 16; st += 2) {
+        const n = st === 14 && fifth ? root + 7 : root;
+        push(st, n, st % 8 === 0 ? 0.85 : 0.65, 1.7);
+      }
+    } else if (mode === 'offbeat') {
+      for (let st = 2; st < 16; st += 4) push(st, root, 0.8, 1.6);
+    } else if (mode === 'octave') {
+      for (let st = 0; st < 16; st += 2) push(st, st % 4 === 2 ? root + 12 : root, 0.7, 1.2);
+    } else if (mode === 'acid') {
+      // 16th-note acid line. The kick owns the beat, so the bass plays the gaps;
+      // the section's random pattern picks which gaps, which note and which
+      // steps are accented (and open the filter wider).
+      const third = fold(36 + s.pc + tones[1], 36);
+      const fifth = fold(36 + s.pc + tones[2], 36);
+      const pick = [root, root, root + 12, third, fifth, root + 12];
+      for (let st = 0; st < 16; st++) {
+        if (st % 4 === 0 || !s.seqGate[st]) continue;
+        const k = s.seqPat[(st * 5 + 3) & 15];
+        push(st, pick[k], k >= 4 ? 0.95 : 0.66, 1.3);
+      }
+    } else if (mode === 'walk') {
+      const nextRoot = fold(36 + s.pc + s.scale[nextDegree], 36);
+      const third = root + (s.scale[(degree + 2) % 7] - s.scale[degree] + 12) % 12;
+      const fifth = root + 7;
+      const approach = nextRoot + (rr.chance(0.5) ? -1 : 1);
+      const seq = [root, rr.chance(0.5) ? third : fifth, fifth, approach];
+      for (let i = 0; i < 4; i++) push(i * 4, seq[i], i === 0 ? 0.85 : 0.65, 3.6);
+    }
+  }
+
+  _planArp(steps, s, tones, j, hum) {
+    const a = s.style.arp;
+    const rate = a.rate;
+    const pool = [];
+    const base = tones.map((t) => fold(48 + s.pc + t, 60)).sort((x, y) => x - y);
+    for (let o = 0; o < a.octaves; o++) for (const n of base) pool.push(n + 12 * o);
+    const N = pool.length;
+    const ar = stream(s.secSeed, 500 + j);
+    for (let st = 0, k = 0; st < 16; st += rate, k++) {
+      // Draw unconditionally so patterns stay in sync when options change.
+      const pick = ar.below(N);
+      const skip = ar.float();
+      let idx;
+      let play = true;
+      switch (a.mode) {
+        case 'up':
+          idx = k % N;
+          break;
+        case 'down':
+          idx = N - 1 - (k % N);
+          break;
+        case 'updown': {
+          const period = Math.max(1, 2 * N - 2);
+          const m = k % period;
+          idx = m < N ? m : period - m;
+          break;
+        }
+        case 'seq':
+          idx = s.seqPat[st] % N;
+          play = s.seqGate[st] === 1;
+          break;
+        default:
+          idx = pick;
+          play = skip > 0.3;
+      }
+      if (!play) continue;
+      const accent = st % 4 === 0 ? 1.12 : 0.92;
+      steps[st].push({
+        voice: 'arp',
+        note: pool[idx],
+        vel: a.vel * accent * (0.9 + hum.float() * 0.1),
+        len: rate * a.gate,
+      });
+    }
+  }
+
+  _planLead(steps, s, tones, j, jj, repeat, progLen, cb, lastBar) {
+    const style = s.style;
+    const key = repeat === 1 && jj === progLen - 1 && s.answer ? 99 : jj % (2 * cb);
+    const r = stream(s.motifSeed, 31 * key + 7);
+    let dens = Math.min(0.9, style.lead.density * s.densMul);
+    if (this.leadOv) dens = Math.max(dens, 0.26);
+    const mel = s.melScale;
+    const origin = 48 + s.pc;
+    const lo = this.leadOv ? this.leadOv.lo : style.lead.lo || 62;
+    const hi = this.leadOv ? this.leadOv.hi : style.lead.hi || 88;
+
+    // Chord tones across the lead register, as midi notes.
+    const ctMidi = [];
+    for (let o = -2; o <= 4; o++) for (const t of tones) ctMidi.push(origin + t + 12 * o);
+    const nearestChordTone = (m) => {
+      let best = ctMidi[0];
+      let bd = 1e9;
+      for (const c of ctMidi) {
+        const d = Math.abs(c - m);
+        if (d < bd) {
+          bd = d;
+          best = c;
+        }
+      }
+      return best;
+    };
+
+    const hits = [];
+    let last = -99;
+    let idx = nearestIdx(mel, s.leadMidi - origin);
+    const deltas = [-3, -2, -2, -1, -1, -1, 0, 1, 1, 1, 2, 2, 3];
+    for (let st = 0; st < 16; st++) {
+      const chance = r.float();
+      const delta = deltas[r.below(deltas.length)];
+      const snap = r.float();
+      const velJ = r.float();
+      const p = Math.min(1, dens * 3.2 * METER[st]);
+      if (chance < p && st - last >= style.lead.minGap) {
+        let m = origin + scaleNote(mel, idx + delta);
+        idx += delta;
+        if (hits.length === 0 || (st % 4 === 0 && snap < 0.65)) {
+          m = nearestChordTone(m);
+          idx = nearestIdx(mel, m - origin);
+        }
+        while (m > hi) {
+          idx -= mel.length;
+          m -= 12;
+        }
+        while (m < lo) {
+          idx += mel.length;
+          m += 12;
+        }
+        hits.push({ st, m, vel: style.lead.vel * (METER[st] > 0.5 ? 1 : 0.85) * (0.88 + velJ * 0.12) });
+        last = st;
+      }
+    }
+    for (let i = 0; i < hits.length; i++) {
+      const h = hits[i];
+      const next = i + 1 < hits.length ? hits[i + 1].st : 16;
+      const len = Math.max(1, Math.min(next - h.st, 8) * 0.92);
+      steps[h.st].push({ voice: 'lead', note: h.m, vel: h.vel, len });
+      s.leadMidi = h.m;
+    }
+  }
+
+  _planDrums(steps, s, j, lastBar, rr, hum) {
+    const d = s.style.drums;
+    const lvl = d.level;
+    const g = s.groove;
+    const add = (st, voice, note, vel, len) =>
+      steps[st].push({ voice, note, vel: Math.min(1, vel * lvl * (0.93 + hum.float() * 0.07)), len: len || 1 });
+
+    for (const st of g.kick) add(st, 'kick', 36, [0, 8].includes(st) || st % 4 === 0 ? 1.0 : 0.6);
+    for (const st of g.snare) {
+      if (lastBar && st === 12) continue;
+      add(st, 'snare', 38, 0.85);
+    }
+    const hat = d.hat;
+    if (hat === 'eighth') {
+      for (let st = 0; st < 16; st += 2) add(st, 'hat', 42, st % 4 === 2 ? 0.55 : 0.35);
+    } else if (hat === 'offbeat') {
+      for (let st = 2; st < 16; st += 4) add(st, 'hat', 46, 0.5, 2);
+    } else if (hat === 'sixteenth') {
+      // Closed 16ths with an open hat on every off-beat eighth.
+      for (let st = 0; st < 16; st++) {
+        if (st % 4 === 2) add(st, 'hat', 46, 0.5, 2);
+        else add(st, 'hat', 42, st % 2 ? 0.22 : 0.34);
+      }
+    } else if (hat === 'sparse') {
+      for (let st = 0; st < 16; st += 2) if (rr.chance(0.35)) add(st, 'hat', 42, 0.3);
+    }
+    if (lastBar) {
+      // Fill: snare roll, or toms when the style has no snare.
+      if (d.snare && s.style.id !== 'epic') {
+        for (let k = 0; k < 4; k++) add(12 + k, 'snare', 38, 0.5 + k * 0.14);
+      } else {
+        const toms = [50, 47, 45, 43];
+        for (let k = 0; k < 4; k++) add(12 + k, 'tom', toms[k], 0.7 + k * 0.08, 2);
+      }
+    }
+  }
+}
+
+
+/* ---- engine/patches.js ---- */
+// Patch table. Times in seconds, frequencies in Hz, detune in cents.
+//   wave   : 'saw' | 'pulse' | 'sine' | 'tri' | 'fm'
+//   osc2   : optional second oscillator (same wave) detuned by `detune` cents
+//   sub    : level of a sine one octave below
+//   cut    : base filter cutoff (Hz, scaled by the bright macro)
+//   fenv   : added cutoff (Hz) at envelope peak, decaying over fdec seconds
+//   key    : how much the cutoff follows pitch (0..1)
+//   res    : filter resonance 0..0.95
+//   fm*    : ratio / index / decay for the 'fm' wave
+//   vib    : vibrato depth in cents, vibRate in Hz
+//   pwm    : pulse-width LFO depth, pwmRate in Hz
+//   rev/dly: effect sends, pan: stereo spread (0 = centre)
+
+const PATCHES = {
+  padSoft: { wave: 'saw', detune: 9, osc2: true, sub: 0, cut: 1300, fenv: 0, fdec: 1, key: 0.3, res: 0.1,
+    a: 0.9, d: 1.5, s: 0.8, r: 2.5, gain: 0.2, rev: 0.6, dly: 0.12, pan: 0.5, pwm: 0 },
+  padDark: { wave: 'saw', detune: 14, osc2: true, sub: 0.3, cut: 620, fenv: 300, fdec: 2, key: 0.2, res: 0.2,
+    a: 1.6, d: 2, s: 0.7, r: 3.5, gain: 0.22, rev: 0.6, dly: 0.1, pan: 0.6, pwm: 0 },
+  padSaw: { wave: 'saw', detune: 12, osc2: true, sub: 0, cut: 2400, fenv: 1500, fdec: 0.9, key: 0.4, res: 0.12,
+    a: 0.25, d: 1, s: 0.75, r: 1.2, gain: 0.17, rev: 0.35, dly: 0.1, pan: 0.5, pwm: 0 },
+  padFM: { wave: 'fm', fmRatio: 1, fmIndex: 1.6, fmDecay: 0.9, detune: 0, osc2: false, sub: 0, cut: 6000, fenv: 0,
+    fdec: 1, key: 0, res: 0, a: 0.01, d: 1.8, s: 0.3, r: 0.8, gain: 0.22, rev: 0.35, dly: 0.2, pan: 0.3, pwm: 0 },
+  padPulse: { wave: 'pulse', pw: 0.3, detune: 7, osc2: true, sub: 0, cut: 3500, fenv: 0, fdec: 1, key: 0.3, res: 0.05,
+    a: 0.02, d: 0.3, s: 0.5, r: 0.15, gain: 0.1, rev: 0.1, dly: 0.1, pan: 0.4, pwm: 0.12, pwmRate: 0.6 },
+
+  bassSub: { wave: 'sine', detune: 0, osc2: false, sub: 0.35, cut: 500, fenv: 0, fdec: 1, key: 0, res: 0,
+    a: 0.02, d: 0.3, s: 0.9, r: 0.4, gain: 0.45, rev: 0, dly: 0, pan: 0, pwm: 0 },
+  bassSaw: { wave: 'saw', detune: 0, osc2: false, sub: 0.5, cut: 420, fenv: 1300, fdec: 0.18, key: 0.2, res: 0.3,
+    a: 0.004, d: 0.2, s: 0.55, r: 0.12, gain: 0.3, rev: 0, dly: 0, pan: 0, pwm: 0 },
+  bassPulse: { wave: 'pulse', pw: 0.4, detune: 0, osc2: false, sub: 0.4, cut: 600, fenv: 900, fdec: 0.1, key: 0.2,
+    res: 0.35, a: 0.003, d: 0.15, s: 0.4, r: 0.08, gain: 0.3, rev: 0, dly: 0, pan: 0, pwm: 0 },
+
+  arpPluck: { wave: 'saw', detune: 8, osc2: true, sub: 0, cut: 1800, fenv: 3000, fdec: 0.12, key: 0.5, res: 0.15,
+    a: 0.003, d: 0.25, s: 0, r: 0.3, gain: 0.17, rev: 0.3, dly: 0.35, pan: 0.6, pwm: 0 },
+  arpBell: { wave: 'fm', fmRatio: 3.5, fmIndex: 2, fmDecay: 0.7, detune: 0, osc2: false, sub: 0, cut: 9000, fenv: 0,
+    fdec: 1, key: 0, res: 0, a: 0.004, d: 1.6, s: 0, r: 1.2, gain: 0.17, rev: 0.5, dly: 0.4, pan: 0.7, pwm: 0 },
+  arpSaw: { wave: 'saw', detune: 0, osc2: false, sub: 0, cut: 1400, fenv: 3500, fdec: 0.1, key: 0.5, res: 0.3,
+    a: 0.002, d: 0.18, s: 0.2, r: 0.15, gain: 0.14, rev: 0.2, dly: 0.3, pan: 0.5, pwm: 0 },
+  arpPulse: { wave: 'pulse', pw: 0.25, detune: 0, osc2: false, sub: 0, cut: 3500, fenv: 1500, fdec: 0.08, key: 0.5,
+    res: 0.1, a: 0.002, d: 0.12, s: 0.25, r: 0.08, gain: 0.13, rev: 0.12, dly: 0.25, pan: 0.5, pwm: 0.1, pwmRate: 2 },
+
+  leadBell: { wave: 'fm', fmRatio: 2, fmIndex: 3, fmDecay: 1.0, detune: 0, osc2: false, sub: 0, cut: 9000, fenv: 0,
+    fdec: 1, key: 0, res: 0, a: 0.005, d: 2.2, s: 0, r: 1.5, gain: 0.2, rev: 0.55, dly: 0.45, pan: 0.3, pwm: 0 },
+  leadSaw: { wave: 'saw', detune: 7, osc2: true, sub: 0, cut: 2600, fenv: 1200, fdec: 0.3, key: 0.6, res: 0.2,
+    a: 0.02, d: 0.3, s: 0.7, r: 0.35, gain: 0.15, rev: 0.3, dly: 0.35, pan: 0.2, pwm: 0, vib: 12, vibRate: 5.2 },
+  leadPulse: { wave: 'pulse', pw: 0.5, detune: 0, osc2: false, sub: 0, cut: 5000, fenv: 0, fdec: 1, key: 0.4, res: 0.05,
+    a: 0.005, d: 0.1, s: 0.6, r: 0.1, gain: 0.12, rev: 0.12, dly: 0.15, pan: 0.2, pwm: 0.15, pwmRate: 3.1, vib: 8, vibRate: 5.8 },
+  leadFM: { wave: 'fm', fmRatio: 2, fmIndex: 2.2, fmDecay: 1.2, detune: 0, osc2: false, sub: 0, cut: 8000, fenv: 0,
+    fdec: 1, key: 0, res: 0, a: 0.01, d: 1.0, s: 0.2, r: 0.6, gain: 0.18, rev: 0.45, dly: 0.3, pan: 0.2, pwm: 0 },
+
+  // ---- Acoustic-style instruments -------------------------------------
+  // formants: [freq Hz, Q, gain] band-pass bank; dry: unfiltered mix level;
+  // breath: noise level; scoop: attack pitch bend in cents; vibDelay: seconds
+  // before vibrato fades in; fRise: cutoff swell time (brass).
+  leadSax: { wave: 'reed', detune: 0, osc2: false, sub: 0, cut: 5200, fenv: 1800, fdec: 0.25, key: 0.3, res: 0.05,
+    formants: [[520, 2.2, 1.0], [1500, 3, 0.55], [2700, 4, 0.25]], dry: 0.4, breath: 0.07,
+    a: 0.045, d: 0.3, s: 0.85, r: 0.14, gain: 0.36, rev: 0.3, dly: 0.2, pan: 0.15, pwm: 0,
+    vib: 22, vibRate: 5.3, vibDelay: 0.35, scoop: 40, scoopDec: 0.07 },
+  leadFlute: { wave: 'tri', detune: 0, osc2: false, sub: 0, cut: 3600, fenv: 600, fdec: 0.15, key: 0.5, res: 0,
+    formants: [[900, 2, 0.25]], dry: 0.9, breath: 0.2,
+    a: 0.06, d: 0.2, s: 0.9, r: 0.15, gain: 0.26, rev: 0.4, dly: 0.25, pan: 0.2, pwm: 0,
+    vib: 16, vibRate: 5.0, vibDelay: 0.4 },
+  leadClarinet: { wave: 'pulse', pw: 0.5, detune: 0, osc2: false, sub: 0, cut: 3200, fenv: 800, fdec: 0.2, key: 0.3, res: 0,
+    formants: [[600, 2.5, 0.8], [1800, 3, 0.3]], dry: 0.5, breath: 0.04,
+    a: 0.03, d: 0.25, s: 0.9, r: 0.1, gain: 0.19, rev: 0.3, dly: 0.2, pan: 0.15, pwm: 0,
+    vib: 10, vibRate: 5.2, vibDelay: 0.5 },
+  leadTrumpet: { wave: 'saw', detune: 0, osc2: false, sub: 0, cut: 900, fenv: 4200, fdec: 1, fRise: 0.05, key: 0.5, res: 0.05,
+    formants: [[1100, 3, 0.8], [2400, 3.5, 0.4]], dry: 0.5, breath: 0.02,
+    a: 0.03, d: 0.2, s: 0.8, r: 0.1, gain: 0.17, rev: 0.3, dly: 0.2, pan: 0.15, pwm: 0,
+    vib: 9, vibRate: 5.6, vibDelay: 0.4, scoop: 30, scoopDec: 0.05 },
+  leadVibes: { wave: 'fm', fmRatio: 3, fmIndex: 0.9, fmDecay: 0.45, detune: 0, osc2: false, sub: 0, cut: 9000, fenv: 0,
+    fdec: 1, key: 0, res: 0, a: 0.003, d: 1.8, s: 0, r: 1.2, gain: 0.2, rev: 0.4, dly: 0.3, pan: 0.3, pwm: 0 },
+  leadOrgan: { wave: 'organ', detune: 0, osc2: false, sub: 0, cut: 6000, fenv: 0, fdec: 1, key: 0, res: 0,
+    a: 0.01, d: 0.05, s: 0.9, r: 0.08, gain: 0.16, rev: 0.25, dly: 0.15, pan: 0.2, pwm: 0,
+    vib: 6, vibRate: 6.2, vibDelay: 0.1 },
+  leadChoir: { wave: 'saw', detune: 10, osc2: true, sub: 0, cut: 4500, fenv: 0, fdec: 1, key: 0.2, res: 0,
+    formants: [[800, 5, 1.0], [1150, 6, 0.6], [2900, 8, 0.25]], dry: 0.15, breath: 0.03,
+    a: 0.25, d: 0.5, s: 0.8, r: 0.5, gain: 0.28, rev: 0.5, dly: 0.2, pan: 0.3, pwm: 0,
+    vib: 10, vibRate: 5.0, vibDelay: 0.3 },
+
+  padStrings: { wave: 'saw', detune: 16, osc2: true, sub: 0, cut: 2800, fenv: 0, fdec: 1, key: 0.4, res: 0.05,
+    a: 0.4, d: 1.5, s: 0.85, r: 0.7, gain: 0.17, rev: 0.4, dly: 0.08, pan: 0.6, pwm: 0,
+    vib: 5, vibRate: 5.1, vibDelay: 0.5 },
+  padChoir: { wave: 'saw', detune: 10, osc2: true, sub: 0, cut: 4500, fenv: 0, fdec: 1, key: 0.2, res: 0,
+    formants: [[700, 5, 1.0], [1100, 6, 0.6], [2800, 8, 0.25]], dry: 0.12, breath: 0.02,
+    a: 0.6, d: 1.5, s: 0.8, r: 1.4, gain: 0.26, rev: 0.6, dly: 0.1, pan: 0.6, pwm: 0,
+    vib: 9, vibRate: 5.0, vibDelay: 0.5 },
+  bassUpright: { wave: 'saw', detune: 0, osc2: false, sub: 0.45, cut: 330, fenv: 700, fdec: 0.1, key: 0.3, res: 0.1,
+    a: 0.006, d: 0.55, s: 0.12, r: 0.2, gain: 0.38, rev: 0, dly: 0, pan: 0, pwm: 0 },
+  // Techno: resonant 303-style acid bass (cutoff snaps up and falls) and a short detuned stab.
+  bassAcid: { wave: 'saw', detune: 0, osc2: false, sub: 0.3, cut: 280, fenv: 2300, fdec: 0.13, key: 0.2, res: 0.72,
+    a: 0.003, d: 0.14, s: 0.3, r: 0.05, gain: 0.27, rev: 0, dly: 0.05, pan: 0, pwm: 0 },
+  arpStab: { wave: 'saw', detune: 10, osc2: true, sub: 0, cut: 900, fenv: 2800, fdec: 0.09, key: 0.4, res: 0.25,
+    a: 0.002, d: 0.13, s: 0, r: 0.1, gain: 0.16, rev: 0.3, dly: 0.4, pan: 0.5, pwm: 0 },
+  arpVibes: { wave: 'fm', fmRatio: 3, fmIndex: 0.8, fmDecay: 0.5, detune: 0, osc2: false, sub: 0, cut: 9000, fenv: 0,
+    fdec: 1, key: 0, res: 0, a: 0.003, d: 1.5, s: 0, r: 1, gain: 0.15, rev: 0.4, dly: 0.25, pan: 0.6, pwm: 0 },
+};
+
+// Instruments the user can pick for the lead line (null = the style decides).
+const LEAD_INSTRUMENTS = [
+  { id: 'auto', name: 'Auto', patch: null },
+  { id: 'sax', name: 'Saxophone', patch: 'leadSax', lo: 55, hi: 81 },
+  { id: 'flute', name: 'Flute', patch: 'leadFlute', lo: 67, hi: 96 },
+  { id: 'clarinet', name: 'Clarinet', patch: 'leadClarinet', lo: 55, hi: 91 },
+  { id: 'trumpet', name: 'Trumpet', patch: 'leadTrumpet', lo: 60, hi: 84 },
+  { id: 'vibes', name: 'Vibraphone', patch: 'leadVibes', lo: 60, hi: 96 },
+  { id: 'organ', name: 'Organ', patch: 'leadOrgan', lo: 55, hi: 88 },
+  { id: 'choir', name: 'Choir', patch: 'leadChoir', lo: 55, hi: 79 },
+];
+
+
+/* ---- engine/voices.js ---- */
+// Realtime voices: a subtractive/FM synth voice and four drum voices.
+// No allocation after construction. All state is plain numbers.
+
+const TWO_PI = 2 * Math.PI;
+const DENORM = 1e-20;
+
+function polyBlep(t, dt) {
+  if (t < dt) {
+    t /= dt;
+    return t + t - t * t - 1;
+  }
+  if (t > 1 - dt) {
+    t = (t - 1) / dt;
+    return t * t + t + t + 1;
+  }
+  return 0;
+}
+
+function midiToHz(n) {
+  return 440 * Math.pow(2, (n - 69) / 12);
+}
+
+// ---------------------------------------------------------------------------
+
+class SynthVoice {
+  constructor(sr) {
+    this.sr = sr;
+    this.active = false;
+    this.p = null;
+    this.age = 0;
+    this.stage = 0; // 1 attack, 2 decay/sustain, 4 release
+    this.env = 0;
+    this.note = 0;
+    this.tick = 0;
+    // Wind/brass/choir features. Typed arrays: element writes do not allocate.
+    this.fc = new Float64Array(12); // per formant: a1, a2, a3, gain*k
+    this.fs = new Float64Array(6); // per formant: ic1, ic2
+    this.nf = 0;
+    this.dry = 1;
+    this.breath = 0;
+    this.nrng = 1;
+    this.lpN = 0;
+    this.be = 0;
+    this.beCoef = 0;
+    this.fRise = false;
+    this.feCoefRise = 0;
+    this.scoopNow = 0;
+    this.scoopCoef = 0;
+  }
+
+  // bright: 0..1 macro. pos: -1..1 pan position. ph0: 0..1 start phase.
+  start(note, vel, lenSamples, patch, bright, pos, ph0) {
+    const sr = this.sr;
+    const p = patch;
+    this.p = p;
+    this.active = true;
+    this.note = note;
+    this.age = 0;
+    this.vel = vel;
+    this.freq = 440 * Math.pow(2, (note - 69) / 12);
+    this.gate = lenSamples;
+    this.stage = 1;
+    this.env = 0;
+    this.atkInc = 1 / Math.max(1, p.a * sr);
+    this.decCoef = Math.exp(-4.6 / (sr * Math.max(0.005, p.d)));
+    this.relCoef = Math.exp(-4.6 / (sr * Math.max(0.005, p.r)));
+    this.sustain = p.s;
+
+    const spread = p.detune || 0;
+    this.mul1 = p.osc2 ? Math.pow(2, -spread / 2400) : 1;
+    this.mul2 = Math.pow(2, spread / 2400);
+    this.ph1 = ph0;
+    this.ph2 = (ph0 * 7.31) % 1;
+    this.phs = 0;
+    this.phm = 0;
+    this.lfo = ph0;
+    this.pwmPh = ph0;
+
+    this.fe = 1;
+    this.feCoefBlock = Math.exp(-16 / (sr * Math.max(0.01, p.fdec || 1)));
+    this.fmE = 1;
+    this.fmCoef = Math.exp(-4.6 / (sr * Math.max(0.05, p.fmDecay || 1)));
+
+    // Filter envelope that rises instead of falling (brass "blat").
+    this.fRise = (p.fRise || 0) > 0;
+    this.feCoefRise = Math.exp(-16 / (sr * Math.max(0.005, p.fRise || 1)));
+    if (this.fRise) this.fe = 0;
+    // Pitch scoop into the note, in cents, settling over scoopDec seconds.
+    this.scoopNow = p.scoop || 0;
+    this.scoopCoef = Math.exp(-16 / (sr * Math.max(0.005, p.scoopDec || 0.06)));
+    // Breath noise: deterministic seed from note and start phase.
+    this.breath = p.breath || 0;
+    this.nrng = (Math.imul(note + 1, 2654435761) ^ Math.floor(ph0 * 4294967295)) | 1;
+    this.lpN = 0;
+    this.be = 1;
+    this.beCoef = Math.exp(-1 / (sr * 0.09));
+    // Parallel formant (band-pass) bank, coefficients fixed for the note.
+    const F = p.formants;
+    this.nf = F ? Math.min(3, F.length) : 0;
+    this.dry = p.dry === undefined ? 1 : p.dry;
+    this.fs.fill(0);
+    for (let q = 0; q < this.nf; q++) {
+      const g = Math.tan((Math.PI * Math.min(F[q][0], sr * 0.4)) / sr);
+      const kq = 1 / F[q][1];
+      const a1f = 1 / (1 + g * (g + kq));
+      this.fc[q * 4] = a1f;
+      this.fc[q * 4 + 1] = g * a1f;
+      this.fc[q * 4 + 2] = g * g * a1f;
+      this.fc[q * 4 + 3] = F[q][2] * kq;
+    }
+
+    // Cutoff base: bright macro moves it by +-1.5 octaves.
+    const track = Math.pow(this.freq / 261.63, p.key || 0);
+    this.cutBase = p.cut * Math.pow(2, (bright - 0.5) * 3) * track;
+    this.res = Math.min(0.95, p.res || 0);
+    this.ic1 = 0;
+    this.ic2 = 0;
+    this.a1 = this.a2 = this.a3 = 0;
+    this.tick = 0;
+    this.vibMul = 1;
+    this.pw = p.pw || 0.5;
+
+    const ang = (pos * (p.pan || 0) + 1) * (Math.PI / 4);
+    this.gL = Math.cos(ang) * 1.3;
+    this.gR = Math.sin(ang) * 1.3;
+    this.gain = p.gain * (0.35 + 0.65 * vel);
+  }
+
+  setBright(bright) {
+    // Applied lazily to cutoff at next control tick for sustained voices.
+    const p = this.p;
+    if (!p) return;
+    const track = Math.pow(this.freq / 261.63, p.key || 0);
+    this.cutBase = p.cut * Math.pow(2, (bright - 0.5) * 3) * track;
+  }
+
+  release() {
+    if (this.stage !== 4) this.stage = 4;
+  }
+
+  // Adds into L/R (dry), REV and DLY (mono sends). Frames [o, o+n).
+  render(n, o, L, R, REV, DLY) {
+    const p = this.p;
+    const sr = this.sr;
+    const wave = p.wave;
+    const isFM = wave === 'fm';
+    const isSaw = wave === 'saw';
+    const isPulse = wave === 'pulse';
+    const isTri = wave === 'tri';
+    const isReed = wave === 'reed';
+    const isOrgan = wave === 'organ';
+    const two = !!p.osc2;
+    const nf = this.nf;
+    const fc = this.fc;
+    const fs = this.fs;
+    const dry = this.dry;
+    const breath = this.breath;
+    const beCoef = this.beCoef;
+    const rise = this.fRise;
+    const scoop = p.scoop || 0;
+    const vibD = p.vibDelay ? p.vibDelay * sr : 0;
+    const vibR = p.vibDelay ? 0.3 * sr : 0.15 * sr;
+    const sub = p.sub || 0;
+    const fenv = p.fenv || 0;
+    const vibDepth = p.vib || 0;
+    const vibInc = ((p.vibRate || 5) * 16) / sr;
+    const pwmDepth = p.pwm || 0;
+    const pwmInc = ((p.pwmRate || 1) * 16) / sr;
+    const fmRatio = p.fmRatio || 1;
+    const fmIndex = p.fmIndex || 0;
+    const revS = p.rev || 0;
+    const dlyS = p.dly || 0;
+    const nyq = sr * 0.45;
+    const oscGain = two ? 0.6 : 1;
+
+    let env = this.env;
+    let stage = this.stage;
+    let ph1 = this.ph1;
+    let ph2 = this.ph2;
+    let phs = this.phs;
+    let phm = this.phm;
+    let ic1 = this.ic1;
+    let ic2 = this.ic2;
+    let a1 = this.a1;
+    let a2 = this.a2;
+    let a3 = this.a3;
+    let k = 2 - 2 * this.res;
+    let fmE = this.fmE;
+    let gate = this.gate;
+    let tick = this.tick;
+    const freq = this.freq;
+    let pw = this.pw;
+    let vibMul = this.vibMul;
+    let nr = this.nrng;
+    let lpN = this.lpN;
+    let be = this.be;
+
+    for (let i = 0; i < n; i++) {
+      if ((tick & 15) === 0) {
+        // Control-rate update every 16 samples.
+        if (rise) this.fe = 1 - (1 - this.fe) * this.feCoefRise;
+        else this.fe *= this.feCoefBlock;
+        let fc = this.cutBase + fenv * this.fe;
+        if (fc > nyq) fc = nyq;
+        if (fc < 20) fc = 20;
+        const g = Math.tan((Math.PI * fc) / sr);
+        a1 = 1 / (1 + g * (g + k));
+        a2 = g * a1;
+        a3 = g * a2;
+        this.lfo += vibInc;
+        if (this.lfo >= 1) this.lfo -= 1;
+        if (vibDepth || scoop) {
+          let cents = 0;
+          if (vibDepth) {
+            let fade = (this.age - vibD) / vibR;
+            fade = fade < 0 ? 0 : fade > 1 ? 1 : fade;
+            cents = vibDepth * fade * Math.sin(TWO_PI * this.lfo);
+          }
+          if (scoop) {
+            this.scoopNow *= this.scoopCoef;
+            cents -= this.scoopNow;
+          }
+          vibMul = Math.pow(2, cents / 1200);
+        }
+        if (pwmDepth) {
+          this.pwmPh += pwmInc;
+          if (this.pwmPh >= 1) this.pwmPh -= 1;
+          pw = (p.pw || 0.5) + pwmDepth * Math.sin(TWO_PI * this.pwmPh);
+          if (pw < 0.08) pw = 0.08;
+          if (pw > 0.92) pw = 0.92;
+        }
+      }
+      tick++;
+
+      // Oscillators
+      let x;
+      const f1 = freq * this.mul1 * vibMul;
+      if (isFM) {
+        const dtc = f1 / sr;
+        ph1 += dtc;
+        if (ph1 >= 1) ph1 -= 1;
+        phm += dtc * fmRatio;
+        if (phm >= 1) phm -= 1;
+        fmE *= this.fmCoef;
+        x = Math.sin(TWO_PI * (ph1 + fmIndex * (0.25 + 0.75 * fmE) * this.vel * Math.sin(TWO_PI * phm)));
+      } else {
+        const dt1 = f1 / sr;
+        ph1 += dt1;
+        if (ph1 >= 1) ph1 -= 1;
+        if (isSaw) {
+          x = 2 * ph1 - 1 - polyBlep(ph1, dt1);
+        } else if (isPulse) {
+          x = ph1 < pw ? 1 : -1;
+          x += polyBlep(ph1, dt1);
+          let t2 = ph1 - pw;
+          if (t2 < 0) t2 += 1;
+          x -= polyBlep(t2, dt1);
+        } else if (isReed) {
+          // Saw plus a narrow pulse: buzzy, even and odd harmonics.
+          let q = ph1 < 0.38 ? 1 : -1;
+          q += polyBlep(ph1, dt1);
+          let t3 = ph1 - 0.38;
+          if (t3 < 0) t3 += 1;
+          q -= polyBlep(t3, dt1);
+          x = 0.6 * (2 * ph1 - 1 - polyBlep(ph1, dt1)) + 0.4 * q;
+        } else if (isOrgan) {
+          x =
+            0.45 * Math.sin(TWO_PI * ph1) +
+            0.3 * Math.sin(TWO_PI * 2 * ph1) +
+            0.2 * Math.sin(TWO_PI * 3 * ph1) +
+            0.12 * Math.sin(TWO_PI * 4 * ph1);
+        } else if (isTri) {
+          x = 4 * Math.abs(ph1 - 0.5) - 1;
+        } else {
+          x = Math.sin(TWO_PI * ph1);
+        }
+        if (two) {
+          const dt2 = (freq * this.mul2 * vibMul) / sr;
+          ph2 += dt2;
+          if (ph2 >= 1) ph2 -= 1;
+          let y;
+          if (isSaw) {
+            y = 2 * ph2 - 1 - polyBlep(ph2, dt2);
+          } else if (isPulse) {
+            y = ph2 < pw ? 1 : -1;
+            y += polyBlep(ph2, dt2);
+            let t2 = ph2 - pw;
+            if (t2 < 0) t2 += 1;
+            y -= polyBlep(t2, dt2);
+          } else {
+            y = Math.sin(TWO_PI * ph2);
+          }
+          x += y;
+        }
+        x *= oscGain;
+      }
+      if (sub) {
+        phs += (freq * 0.5) / sr;
+        if (phs >= 1) phs -= 1;
+        x += sub * Math.sin(TWO_PI * phs);
+      }
+
+      // State-variable lowpass (TPT)
+      const v3 = x - ic2;
+      const v1 = a1 * ic1 + a2 * v3;
+      const v2 = ic2 + a2 * ic1 + a3 * v3;
+      ic1 = 2 * v1 - ic1;
+      ic2 = 2 * v2 - ic2;
+
+      // Optional formant bank (parallel band-passes) and breath noise.
+      let sig = v2;
+      if (nf > 0) {
+        let acc = v2 * dry;
+        for (let q = 0; q < nf; q++) {
+          const b = q * 4;
+          const s = q * 2;
+          const f1c = fs[s];
+          const f2c = fs[s + 1];
+          const v3f = v2 - f2c;
+          const v1f = fc[b] * f1c + fc[b + 1] * v3f;
+          const v2f = f2c + fc[b + 1] * f1c + fc[b + 2] * v3f;
+          fs[s] = 2 * v1f - f1c;
+          fs[s + 1] = 2 * v2f - f2c;
+          acc += fc[b + 3] * v1f;
+        }
+        sig = acc;
+      }
+      if (breath > 0) {
+        nr = (Math.imul(nr, 1664525) + 1013904223) | 0;
+        const nz = nr / 2147483648;
+        lpN += 0.3 * (nz - lpN);
+        be *= beCoef;
+        sig += breath * (0.35 + 0.65 * be) * (nz - lpN);
+      }
+
+      // Amp envelope
+      if (stage === 1) {
+        env += this.atkInc;
+        if (env >= 1) {
+          env = 1;
+          stage = 2;
+        }
+      } else if (stage === 2) {
+        env = this.sustain + (env - this.sustain) * this.decCoef;
+        if (env < 1e-4 && this.sustain < 1e-4) {
+          this.active = false;
+          break;
+        }
+      } else {
+        env *= this.relCoef;
+        if (env < 1e-4) {
+          this.active = false;
+          break;
+        }
+      }
+      if (stage !== 4) {
+        gate -= 1;
+        if (gate <= 0) stage = 4;
+      }
+
+      const out = sig * env * this.gain;
+      const idx = o + i;
+      L[idx] += out * this.gL;
+      R[idx] += out * this.gR;
+      REV[idx] += out * revS;
+      DLY[idx] += out * dlyS;
+    }
+
+    this.env = env;
+    this.stage = stage;
+    this.ph1 = ph1;
+    this.ph2 = ph2;
+    this.phs = phs;
+    this.phm = phm;
+    this.ic1 = ic1 + DENORM;
+    this.ic2 = ic2 + DENORM;
+    this.a1 = a1;
+    this.a2 = a2;
+    this.a3 = a3;
+    this.fmE = fmE;
+    this.gate = gate;
+    this.tick = tick;
+    this.pw = pw;
+    this.vibMul = vibMul;
+    this.nrng = nr;
+    this.lpN = lpN;
+    this.be = be;
+    this.age += n;
+  }
+}
+
+// ---------------------------------------------------------------------------
+
+const K_KICK = 1;
+const K_SNARE = 2;
+const K_HAT = 3;
+const K_TOM = 4;
+
+// All per-sample state lives in locals inside render() and is written back
+// once per call: object-field double stores allocate in V8 and would feed the
+// garbage collector from the audio thread.
+class DrumVoice {
+  constructor(sr, seed) {
+    this.sr = sr;
+    this.active = false;
+    this.kind = 0;
+    this.rng = (seed | 0) || 12345;
+    this.age = 0;
+    this.vel = 0;
+    this.ph = 0;
+    this.lp1 = 0;
+    this.lp2 = 0;
+    this.env = 0;
+    this.pitchEnv = 0;
+    this.toneEnv = 0;
+    this.ampCoef = 0;
+    this.pitchCoef = 0;
+    this.toneCoef = 0;
+    this.hpA = 0;
+    this.f0 = 0;
+    this.fSpan = 0;
+    this.rev = 0;
+  }
+
+  start(voice, note, vel) {
+    const sr = this.sr;
+    this.active = true;
+    this.age = 0;
+    this.vel = vel;
+    this.ph = 0;
+    this.lp1 = 0;
+    this.lp2 = 0;
+    this.env = 1;
+    this.pitchEnv = 1;
+    this.toneEnv = 1;
+    this.toneCoef = 0;
+    this.pitchCoef = 0;
+    this.hpA = 0;
+    this.f0 = 0;
+    this.fSpan = 0;
+    if (voice === 'kick') {
+      this.kind = K_KICK;
+      this.ampCoef = Math.exp(-1 / (sr * 0.075));
+      this.pitchCoef = Math.exp(-1 / (sr * 0.028));
+      this.f0 = 44;
+      this.fSpan = 150;
+      this.rev = 0;
+    } else if (voice === 'snare') {
+      this.kind = K_SNARE;
+      this.ampCoef = Math.exp(-1 / (sr * 0.075));
+      this.toneCoef = Math.exp(-1 / (sr * 0.045));
+      this.pitchCoef = Math.exp(-1 / (sr * 0.02));
+      this.hpA = 1 - Math.exp((-TWO_PI * 1400) / sr);
+      this.rev = 0.22;
+    } else if (voice === 'hat') {
+      this.kind = K_HAT;
+      const open = note === 46;
+      this.ampCoef = Math.exp(-1 / (sr * (open ? 0.11 : 0.022)));
+      this.hpA = 1 - Math.exp((-TWO_PI * 7000) / sr);
+      this.rev = 0.12;
+    } else {
+      this.kind = K_TOM;
+      this.ampCoef = Math.exp(-1 / (sr * 0.17));
+      this.pitchCoef = Math.exp(-1 / (sr * 0.05));
+      this.f0 = 440 * Math.pow(2, (note - 69) / 12);
+      this.fSpan = this.f0 * 0.8;
+      this.rev = 0.3;
+    }
+  }
+
+  // Adds to L/R (centre) and REV for frames [o, o+n).
+  render(n, o, L, R, REV) {
+    const kind = this.kind;
+    const sr = this.sr;
+    const gain = this.vel * 0.55;
+    const rev = this.rev;
+    const ampCoef = this.ampCoef;
+    const pitchCoef = this.pitchCoef;
+    const toneCoef = this.toneCoef;
+    const hpA = this.hpA;
+    const f0 = this.f0;
+    const fSpan = this.fSpan;
+    let env = this.env;
+    let pe = this.pitchEnv;
+    let te = this.toneEnv;
+    let ph = this.ph;
+    let lp1 = this.lp1;
+    let lp2 = this.lp2;
+    let rng = this.rng;
+    const age = this.age;
+    let done = false;
+    let i = 0;
+    for (; i < n; i++) {
+      let out;
+      if (kind === K_KICK) {
+        pe *= pitchCoef;
+        ph += (f0 + fSpan * pe) / sr;
+        if (ph >= 1) ph -= 1;
+        let click = 0;
+        if (age + i < 40) {
+          rng = (Math.imul(rng, 1664525) + 1013904223) | 0;
+          click = (rng / 2147483648) * 0.25;
+        }
+        out = Math.tanh(1.8 * Math.sin(TWO_PI * ph)) * env * 0.9 + click * env;
+      } else if (kind === K_SNARE) {
+        rng = (Math.imul(rng, 1664525) + 1013904223) | 0;
+        const nz = rng / 2147483648;
+        lp1 += hpA * (nz - lp1);
+        pe *= pitchCoef;
+        ph += (175 + 70 * pe) / sr;
+        if (ph >= 1) ph -= 1;
+        te *= toneCoef;
+        out = (nz - lp1) * env * 0.7 + Math.sin(TWO_PI * ph) * te * 0.45;
+      } else if (kind === K_HAT) {
+        rng = (Math.imul(rng, 1664525) + 1013904223) | 0;
+        const nz = rng / 2147483648;
+        lp1 += hpA * (nz - lp1);
+        const h1 = nz - lp1;
+        lp2 += hpA * (h1 - lp2);
+        out = (h1 - lp2) * env * 0.9;
+      } else {
+        pe *= pitchCoef;
+        ph += (f0 + fSpan * pe) / sr;
+        if (ph >= 1) ph -= 1;
+        out = Math.sin(TWO_PI * ph) * env * 0.9;
+      }
+      env *= ampCoef;
+      out *= gain;
+      const idx = o + i;
+      L[idx] += out;
+      R[idx] += out;
+      REV[idx] += out * rev;
+      if (env < 1e-4) {
+        done = true;
+        i++;
+        break;
+      }
+    }
+    if (done) this.active = false;
+    this.env = env;
+    this.pitchEnv = pe;
+    this.toneEnv = te;
+    this.ph = ph;
+    this.lp1 = lp1;
+    this.lp2 = lp2;
+    this.rng = rng;
+    this.age = age + i;
+  }
+}
+
+
+/* ---- engine/fx.js ---- */
+// Effects: tempo-synced ping-pong delay and a Freeverb-style stereo reverb.
+
+class PingPongDelay {
+  constructor(sr, maxSec) {
+    this.sr = sr;
+    this.size = Math.ceil(sr * (maxSec || 3)) + 4;
+    this.bufL = new Float32Array(this.size);
+    this.bufR = new Float32Array(this.size);
+    this.w = 0;
+    this.delay = sr * 0.4;
+    this.target = this.delay;
+    this.fb = 0.4;
+    this.fbTarget = 0.4;
+    this.lpL = 0;
+    this.lpR = 0;
+    this.lpA = 0.42; // feedback low-pass amount (higher = darker)
+  }
+
+  setTime(sec) {
+    this.target = Math.max(32, Math.min(this.size - 8, sec * this.sr));
+  }
+
+  setFeedback(fb) {
+    this.fbTarget = Math.min(0.75, Math.max(0, fb));
+  }
+
+  // Adds wet signal to outL/outR scaled by `level`.
+  process(n, o, inp, outL, outR, level) {
+    const size = this.size;
+    const bufL = this.bufL;
+    const bufR = this.bufR;
+    let w = this.w;
+    let d = this.delay;
+    let lpL = this.lpL;
+    let lpR = this.lpR;
+    const a = this.lpA;
+    const target = this.target;
+    let fb = this.fb;
+    const fbT = this.fbTarget;
+    for (let i = 0; i < n; i++) {
+      d += (target - d) * 0.0002;
+      fb += (fbT - fb) * 0.001;
+      let r = w - d;
+      if (r < 0) r += size;
+      const i0 = Math.floor(r);
+      const fr = r - i0;
+      const i1 = i0 + 1 >= size ? 0 : i0 + 1;
+      const dl = bufL[i0] * (1 - fr) + bufL[i1] * fr;
+      const dr = bufR[i0] * (1 - fr) + bufR[i1] * fr;
+      lpL += (1 - a) * (dl - lpL);
+      lpR += (1 - a) * (dr - lpR);
+      bufL[w] = inp[o + i] + fb * lpR;
+      bufR[w] = fb * lpL;
+      w++;
+      if (w >= size) w = 0;
+      outL[o + i] += dl * level;
+      outR[o + i] += dr * level;
+    }
+    this.w = w;
+    this.delay = d;
+    this.fb = fb;
+    this.lpL = lpL + 1e-20;
+    this.lpR = lpR + 1e-20;
+  }
+}
+
+const COMB = [1116, 1188, 1277, 1356, 1422, 1491, 1557, 1617];
+const ALLP = [556, 441, 341, 225];
+const SPREAD = 23;
+
+class Reverb {
+  constructor(sr) {
+    const sc = sr / 44100;
+    this.combL = [];
+    this.combR = [];
+    this.apL = [];
+    this.apR = [];
+    for (const len of COMB) {
+      this.combL.push({ buf: new Float32Array(Math.round(len * sc)), i: 0, f: 0 });
+      this.combR.push({ buf: new Float32Array(Math.round((len + SPREAD) * sc)), i: 0, f: 0 });
+    }
+    for (const len of ALLP) {
+      this.apL.push({ buf: new Float32Array(Math.round(len * sc)), i: 0 });
+      this.apR.push({ buf: new Float32Array(Math.round((len + SPREAD) * sc)), i: 0 });
+    }
+    this.fb = 0.85;
+    this.fbTarget = 0.85;
+    this.damp = 0.28;
+  }
+
+  setSize(size) {
+    this.fbTarget = 0.72 + 0.24 * Math.min(1, Math.max(0, size));
+  }
+
+  process(n, o, inp, outL, outR, level) {
+    const damp = this.damp;
+    const g = 0.03;
+    const combL = this.combL;
+    const combR = this.combR;
+    const apL = this.apL;
+    const apR = this.apR;
+    let fb = this.fb;
+    const fbT = this.fbTarget;
+    for (let s = 0; s < n; s++) {
+      fb += (fbT - fb) * 0.0005;
+      const x = inp[o + s] * g;
+      let accL = 0;
+      let accR = 0;
+      for (let c = 0; c < 8; c++) {
+        const cl = combL[c];
+        const bl = cl.buf;
+        const ol = bl[cl.i];
+        cl.f = ol * (1 - damp) + cl.f * damp;
+        bl[cl.i] = x + cl.f * fb;
+        if (++cl.i >= bl.length) cl.i = 0;
+        accL += ol;
+
+        const cr = combR[c];
+        const br = cr.buf;
+        const or = br[cr.i];
+        cr.f = or * (1 - damp) + cr.f * damp;
+        br[cr.i] = x + cr.f * fb;
+        if (++cr.i >= br.length) cr.i = 0;
+        accR += or;
+      }
+      for (let a = 0; a < 4; a++) {
+        const al = apL[a];
+        const bo = al.buf[al.i];
+        const outl = -accL + bo;
+        al.buf[al.i] = accL + bo * 0.5;
+        if (++al.i >= al.buf.length) al.i = 0;
+        accL = outl;
+
+        const ar = apR[a];
+        const bor = ar.buf[ar.i];
+        const outr = -accR + bor;
+        ar.buf[ar.i] = accR + bor * 0.5;
+        if (++ar.i >= ar.buf.length) ar.i = 0;
+        accR = outr;
+      }
+      outL[o + s] += accL * level;
+      outR[o + s] += accR * level;
+    }
+    this.fb = fb;
+  }
+}
+
+
+/* ---- engine/engine.js ---- */
+// Realtime engine: schedules composer events sample-accurately, renders the
+// voices and effects, and applies master processing. Works identically inside
+// an AudioWorklet and in Node (for offline tests).
+
+
+const MAX_CHUNK = 256;
+const N_VOICES = 24;
+const N_DRUMS = 8;
+
+// Smooth saturator, tanh-shaped, in plain arithmetic (no builtin call, so it
+// stays allocation-free in the audio thread). Exact tanh Pade-style rational
+// approximation, clamped to +-1 outside |x| >= 3.
+function softClip(x) {
+  if (x > 3) return 1;
+  if (x < -3) return -1;
+  const x2 = x * x;
+  return (x * (27 + x2)) / (27 + 9 * x2);
+}
+
+class Engine {
+  constructor(sr) {
+    this.sr = sr;
+    this.composer = new Composer();
+    this.voices = [];
+    for (let i = 0; i < N_VOICES; i++) this.voices.push(new SynthVoice(sr));
+    this.drums = [];
+    for (let i = 0; i < N_DRUMS; i++) this.drums.push(new DrumVoice(sr, 1000 + i * 7919));
+    this.delay = new PingPongDelay(sr, 3.2);
+    this.reverb = new Reverb(sr);
+
+    const z = () => new Float32Array(MAX_CHUNK);
+    this.bL = z();
+    this.bR = z();
+    this.bREV = z();
+    this.bDLY = z();
+    this.dL = z();
+    this.dR = z();
+    this.dREV = z();
+
+    this.running = false;
+    this.leadPatch = null;
+    this.volume = 0.8;
+    this.volNow = 0.0;
+    this.bright = 0.5;
+    this.brightTarget = 0.5;
+    this.trim = 1;
+    this.trimTarget = 1;
+    this.dlyLevel = 0;
+    this.dlyTarget = 0;
+    this.revLevel = 0;
+    this.revTarget = 0;
+    this.duck = 0;
+    this.duckAmt = 0;
+    this.duckCoef = Math.exp(-1 / (sr * 0.16));
+
+    this.plan = null;
+    this.stepIndex = 0;
+    this.stepLen = (sr * 60) / 120 / 4;
+    this.gridTime = 0;
+    this.nextTrig = 0;
+    this.samplePos = 0;
+    this.phSeed = 12345;
+
+    this.dcXl = 0;
+    this.dcXr = 0;
+    this.dcYl = 0;
+    this.dcYr = 0;
+    this.peak = 0;
+    this.onBar = null;
+  }
+
+  setSeed(seed) {
+    this.composer.setSeed(seed);
+    if (!this.running) {
+      this.running = true;
+      this.stepIndex = 0;
+      this.gridTime = this.samplePos;
+      this.nextTrig = this.samplePos;
+    }
+  }
+
+  setVolume(v) {
+    this.volume = Math.max(0, Math.min(1, v));
+  }
+
+  // Tempo follows movement: 0..1 across the style's range, or null to use the
+  // seed's tempo. Takes effect gradually from the next bar lines.
+  setTempoFactor(f) {
+    this.composer.setTempoFactor(f);
+  }
+
+  // Manual tempo in bpm (null = movement/seed tempo). Applies immediately,
+  // mid-bar, so a slider feels direct.
+  setTempoOverride(bpm) {
+    this.composer.setTempoOverride(bpm);
+    const b = this.composer.tempoOv;
+    if (b !== null && this.plan) {
+      this.stepLen = (this.sr * 60) / b / 4;
+      this.delay.setTime((this.plan.fx.delayBeats * 60) / b);
+    }
+  }
+
+  // Replace the lead voice with a named patch (and force the lead line on,
+  // in that instrument's range). name = null restores the style's own lead.
+  setLeadPatch(name, lo, hi) {
+    const p = name ? PATCHES[name] : null;
+    this.leadPatch = p || null;
+    this.composer.setLeadOverride(p ? { lo: lo || 55, hi: hi || 88 } : null);
+  }
+
+  _rand() {
+    this.phSeed = (Math.imul(this.phSeed, 1664525) + 1013904223) >>> 0;
+    return this.phSeed / 4294967296;
+  }
+
+  _beginBar() {
+    if (this.composer.hasPending()) {
+      // New place: let the old harmony ring out naturally.
+      for (const v of this.voices) if (v.active) v.release();
+    }
+    const plan = this.composer.nextBar();
+    this.plan = plan;
+    this.stepLen = (this.sr * 60) / plan.bpm / 4;
+    const fx = plan.fx;
+    this.delay.setTime((fx.delayBeats * 60) / plan.bpm);
+    this.delay.setFeedback(fx.delayFb);
+    this.reverb.setSize(fx.reverbSize);
+    this.dlyTarget = fx.delayMix * 1.6;
+    this.revTarget = fx.reverbMix * 3;
+    this.brightTarget = plan.bright;
+    this.trimTarget = plan.trim;
+    this.duckAmt = plan.duck;
+    if (this.onBar) this.onBar(plan, this.composer.info());
+  }
+
+  _trigger(ev) {
+    const plan = this.plan;
+    const v = ev.voice;
+    if (v === 'kick' || v === 'snare' || v === 'hat' || v === 'tom') {
+      let slot = null;
+      for (const d of this.drums) {
+        if (!d.active) {
+          slot = d;
+          break;
+        }
+      }
+      if (!slot) {
+        slot = this.drums[0];
+        for (const d of this.drums) if (d.age > slot.age) slot = d;
+      }
+      slot.start(v, ev.note, ev.vel);
+      if (v === 'kick') this.duck = 1;
+      return;
+    }
+    const patch = (v === 'lead' && this.leadPatch) || PATCHES[plan.patches[v]];
+    if (!patch) return;
+    let slot = null;
+    for (const s of this.voices) {
+      if (!s.active) {
+        slot = s;
+        break;
+      }
+    }
+    if (!slot) {
+      // Steal: quietest releasing voice, else the oldest.
+      let best = null;
+      for (const s of this.voices) {
+        if (s.stage === 4 && (!best || s.env < best.env)) best = s;
+      }
+      if (!best) {
+        best = this.voices[0];
+        for (const s of this.voices) if (s.age > best.age) best = s;
+      }
+      slot = best;
+    }
+    const ph0 = this._rand();
+    const pos = this._rand() * 2 - 1;
+    slot.start(ev.note, ev.vel, ev.len * this.stepLen, patch, this.bright, pos, ph0);
+  }
+
+  _fireStep() {
+    if (this.stepIndex === 0) this._beginBar();
+    const evs = this.plan.steps[this.stepIndex];
+    for (let i = 0; i < evs.length; i++) this._trigger(evs[i]);
+    this.stepIndex++;
+    if (this.stepIndex >= STEPS_PER_BAR) this.stepIndex = 0;
+    this.gridTime += this.stepLen;
+    // 16th-note swing delays odd steps; eighth-note swing delays the off-beat
+    // eighths (steps 2, 6, 10, 14), e.g. a triplet feel for jazz.
+    const si = this.stepIndex;
+    const swingOff = ((si & 1 ? this.plan.swing : 0) + ((si & 3) === 2 ? this.plan.swing8 : 0)) * this.stepLen;
+    this.nextTrig = this.gridTime + swingOff;
+  }
+
+  // Render n frames into outL/outR (Float32Array). Any n.
+  render(outL, outR, n) {
+    let done = 0;
+    while (done < n) {
+      const want = Math.min(n - done, MAX_CHUNK);
+      let chunk = want;
+      if (this.running) {
+        // Fire all steps that are due at or before the chunk start.
+        while (this.nextTrig <= this.samplePos) this._fireStep();
+        const until = Math.ceil(this.nextTrig - this.samplePos);
+        if (until < chunk) chunk = Math.max(1, until);
+      }
+      this._renderChunk(outL, outR, done, chunk);
+      this.samplePos += chunk;
+      done += chunk;
+    }
+  }
+
+  _renderChunk(outL, outR, off, n) {
+    const bL = this.bL;
+    const bR = this.bR;
+    const bREV = this.bREV;
+    const bDLY = this.bDLY;
+    const dL = this.dL;
+    const dR = this.dR;
+    const dREV = this.dREV;
+    bL.fill(0, 0, n);
+    bR.fill(0, 0, n);
+    bREV.fill(0, 0, n);
+    bDLY.fill(0, 0, n);
+    dL.fill(0, 0, n);
+    dR.fill(0, 0, n);
+    dREV.fill(0, 0, n);
+
+    // Time-based smoothing so the result does not depend on block size.
+    const kSlow = 1 - Math.exp(-n / (this.sr * 0.5));
+    const kFast = 1 - Math.exp(-n / (this.sr * 0.3));
+    this.bright += (this.brightTarget - this.bright) * kSlow;
+    this.dlyLevel += (this.dlyTarget - this.dlyLevel) * kFast;
+    this.revLevel += (this.revTarget - this.revLevel) * kFast;
+    this.trim += (this.trimTarget - this.trim) * kSlow;
+
+    for (const v of this.voices) {
+      if (!v.active) continue;
+      if (v.stage !== 4) v.setBright(this.bright);
+      v.render(n, 0, bL, bR, bREV, bDLY);
+    }
+    for (const d of this.drums) {
+      if (d.active) d.render(n, 0, dL, dR, dREV);
+    }
+
+    // Sidechain-style duck of the synth bus on each kick.
+    let duck = this.duck;
+    const amt = this.duckAmt;
+    const dc = this.duckCoef;
+    for (let i = 0; i < n; i++) {
+      const g = 1 - amt * duck;
+      bL[i] *= g;
+      bR[i] *= g;
+      bREV[i] *= g;
+      bDLY[i] *= g;
+      bREV[i] += dREV[i];
+      duck *= dc;
+    }
+    this.duck = duck;
+
+    this.delay.process(n, 0, bDLY, bL, bR, this.dlyLevel);
+    this.reverb.process(n, 0, bREV, bL, bR, this.revLevel);
+
+    // Master: mix drums, volume, DC block, soft clip.
+    const target = this.running ? this.volume * this.trim : 0;
+    let vol = this.volNow;
+    const vstep = (target - vol) / Math.max(1, this.sr * 0.05);
+    let peak = this.peak * 0.9;
+    // Filter state in locals: object-field double stores allocate in V8.
+    let xl = this.dcXl;
+    let xr = this.dcXr;
+    let ylPrev = this.dcYl;
+    let yrPrev = this.dcYr;
+    for (let i = 0; i < n; i++) {
+      vol += vstep;
+      if ((vstep > 0 && vol > target) || (vstep < 0 && vol < target)) vol = target;
+      const l = (bL[i] + dL[i]) * vol;
+      const r = (bR[i] + dR[i]) * vol;
+      const yl = l - xl + 0.995 * ylPrev;
+      const yr = r - xr + 0.995 * yrPrev;
+      xl = l;
+      xr = r;
+      ylPrev = yl;
+      yrPrev = yr;
+      const ol = softClip(yl);
+      const or = softClip(yr);
+      outL[off + i] = ol;
+      outR[off + i] = or;
+      const a = ol < 0 ? -ol : ol;
+      const b = or < 0 ? -or : or;
+      if (a > peak) peak = a;
+      if (b > peak) peak = b;
+    }
+    this.dcXl = xl;
+    this.dcXr = xr;
+    this.dcYl = ylPrev + 1e-20;
+    this.dcYr = yrPrev + 1e-20;
+    this.volNow = vol;
+    this.peak = peak;
+  }
+}
+
+
+/* ---- geo.js ---- */
+// GPS fix -> seed. Two grid levels:
+//   coarse (~11 km): style, key, mode, tempo
+//   fine   (~110 m): progression, melodies, arrangement
+// Hysteresis stops boundary flapping, the lon step is scaled by latitude so
+// cells stay roughly square, and fine updates are rate limited so driving
+// does not re-roll the music every few seconds.
+
+
+const SALT_COARSE = 0x434f4152; // 'COAR'
+const SALT_FINE = 0x46494e45; // 'FINE'
+
+function snap(prev, x, step, hyst) {
+  const u = x / step;
+  if (prev === null) return Math.floor(u);
+  const f = u - prev;
+  if (f >= -hyst && f < 1 + hyst) return prev;
+  return Math.floor(u);
+}
+
+// Quantised so every device derives identical cell edges.
+function lonScale(latDeg) {
+  const c = Math.cos((latDeg * Math.PI) / 180);
+  return Math.round(Math.max(0.2, c) * 100) / 100;
+}
+
+class GeoSeeder {
+  constructor(opts) {
+    const o = opts || {};
+    this.coarseDeg = o.coarseDeg || 0.1;
+    this.fineDeg = o.fineDeg || 0.001;
+    this.hyst = o.hyst === undefined ? 0.2 : o.hyst;
+    this.minFineHoldMs = o.minFineHoldMs === undefined ? 20000 : o.minFineHoldMs;
+    this.maxAccuracyM = o.maxAccuracyM || 30000;
+    this.fineAccuracyM = o.fineAccuracyM || 400;
+    this.cLat = null;
+    this.cLon = null;
+    this.fLat = null;
+    this.fLon = null;
+    this.lastFineChange = -Infinity;
+    this.seed = null;
+  }
+
+  // Returns a new { coarse, fine, ... } seed object when the seed changed,
+  // otherwise null. Position is always accepted; `nowMs` drives rate limiting.
+  update(lat, lon, accuracyM, nowMs) {
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+    if (Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
+    const acc = Number.isFinite(accuracyM) ? accuracyM : 0;
+    if (acc > this.maxAccuracyM) return null;
+    const now = Number.isFinite(nowMs) ? nowMs : 0;
+
+    const cLat = snap(this.cLat, lat, this.coarseDeg, this.hyst);
+    const latCenter = (cLat + 0.5) * this.coarseDeg;
+    const ls = lonScale(latCenter);
+    const cLonStep = this.coarseDeg / ls;
+    const cLon = snap(this.cLon, lon, cLonStep, this.hyst);
+    const coarseChanged = cLat !== this.cLat || cLon !== this.cLon;
+
+    let fLat = this.fLat;
+    let fLon = this.fLon;
+    let fineChanged = false;
+    const fineOk = acc <= this.fineAccuracyM;
+    const first = this.seed === null;
+    if (coarseChanged || first || (fineOk && now - this.lastFineChange >= this.minFineHoldMs)) {
+      const nLat = snap(coarseChanged ? null : this.fLat, lat, this.fineDeg, this.hyst);
+      const fLonStep = this.fineDeg / ls;
+      const nLon = snap(coarseChanged ? null : this.fLon, lon, fLonStep, this.hyst);
+      if (nLat !== this.fLat || nLon !== this.fLon || coarseChanged) {
+        fLat = nLat;
+        fLon = nLon;
+        fineChanged = true;
+      }
+    }
+
+    if (!coarseChanged && !fineChanged && !first) return null;
+
+    this.cLat = cLat;
+    this.cLon = cLon;
+    this.fLat = fLat;
+    this.fLon = fLon;
+    if (fineChanged || first) this.lastFineChange = now;
+
+    const coarse = hash3(cLat, cLon, SALT_COARSE);
+    const fine = hash3(fLat, fLon, SALT_FINE);
+    this.seed = { coarse, fine, cLat, cLon, fLat, fLon, coarseChanged, fineChanged };
+    return this.seed;
+  }
+}
+
+// Approximate metres between two lat/lon points (small distances).
+function distanceM(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const toRad = Math.PI / 180;
+  const dLat = (lat2 - lat1) * toRad;
+  const dLon = (lon2 - lon1) * toRad;
+  const a =
+    Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * toRad) * Math.cos(lat2 * toRad) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+
+// Movement speed from successive position updates, for tempo.
+// - A GPS-reported speed (m/s) is used when present, since it is Doppler based
+//   and does not jitter; otherwise speed = distance / time between updates.
+// - Displacement over ~10 s below twice the accuracy radius counts as standing still.
+// - Smoothed over ~tau seconds and decays towards 0 when updates stop, so
+//   stopping slows the music down and an idle Manual mode settles on the
+//   slowest tempo. Jumping to a far-away place in Manual mode reads as very
+//   fast movement and then calms down.
+// Speed ceiling for tempo: anything at or above 100 km/h counts as 100 km/h.
+const MAX_SPEED_KMH = 100;
+const MAX_SPEED_MS = MAX_SPEED_KMH / 3.6;
+
+class SpeedTracker {
+  constructor(opts) {
+    const o = opts || {};
+    this.tau = o.tau || 4; // smoothing time constant, seconds
+    this.windowMs = o.windowMs || 10000; // displacement baseline
+    this.hist = [];
+    this.decayTau = o.decayTau || 10; // decay when no updates arrive
+    this.vMax = o.vMax || MAX_SPEED_MS; // m/s at which tempo tops out (100 km/h)
+    this.vCap = o.vCap || MAX_SPEED_MS; // hard clamp: the measured speed never exceeds this
+    this.idleAfterMs = o.idleAfterMs || 3000;
+    this.last = null;
+    this.v = 0;
+    this.lastTick = null;
+  }
+
+  // lat/lon degrees, acc metres (0 if unknown), tMs timestamp, gpsSpeed m/s or undefined.
+  update(lat, lon, acc, tMs, gpsSpeed) {
+    const last = this.last;
+    const cur = { lat, lon, acc: acc || 0, t: tMs };
+    this.last = cur;
+    this.lastTick = tMs;
+    // Keep ~windowMs of history, but always the previous fix.
+    this.hist.push(cur);
+    while (this.hist.length > 2 && tMs - this.hist[0].t > this.windowMs) this.hist.shift();
+    if (!last) return;
+    const dtStep = (tMs - last.t) / 1000;
+    if (dtStep < 0.05) return;
+
+    let inst;
+    if (Number.isFinite(gpsSpeed) && gpsSpeed >= 0) {
+      inst = gpsSpeed;
+    } else {
+      // Displacement over the window, not fix to fix: at walking pace one fix
+      // moves less than the GPS accuracy, and jitter alone can exceed it.
+      const ref = this.hist[0];
+      const dt = (tMs - ref.t) / 1000;
+      const d = distanceM(ref.lat, ref.lon, lat, lon);
+      const thresh = 2 * Math.max(cur.acc, ref.acc);
+      inst = dt >= 0.05 && d > thresh ? d / dt : 0;
+    }
+    inst = Math.min(this.vCap, inst);
+    const a = 1 - Math.exp(-dtStep / this.tau);
+    this.v += (inst - this.v) * a;
+  }
+
+  // Call about once a second; decays the speed while no updates arrive.
+  tick(tMs) {
+    if (this.lastTick === null) {
+      this.lastTick = tMs;
+      return;
+    }
+    const idle = tMs - (this.last ? this.last.t : this.lastTick);
+    const dt = Math.max(0, (tMs - this.lastTick) / 1000);
+    this.lastTick = tMs;
+    if (this.last && idle > this.idleAfterMs) this.v *= Math.exp(-dt / this.decayTau);
+  }
+
+  get speed() {
+    return this.v;
+  }
+
+  // 0..1 on a log scale: ~0.26 walking, ~0.57 cycling, ~0.8 driving, 1 at vMax (100 km/h).
+  get factor() {
+    const f = Math.log10(1 + this.v) / Math.log10(1 + this.vMax);
+    return f < 0 ? 0 : f > 1 ? 1 : f;
+  }
+}
+
+
+/* ---- version.js ---- */
+// Single source of the app version, shown in the footer. Change it with
+// `node bump.mjs` (adds 0.1; `node bump.mjs major` gives 2.0), which also updates
+// package.json and the service-worker cache name so installed copies refresh.
+const VERSION = '1.4';
+
+
+/* ---- app.js ---- */
+// GeoSynth main-thread controller: audio graph, position sources, UI.
+
+const $ = (id) => document.getElementById(id);
+
+const HUES = [200, 320, 275, 170, 235, 50, 25, 355, 95, 140]; // one per style
+const GPS_STALE_MS = 30000; // no fix for this long: say so (iOS sends no updates while you stand still)
+const PRESETS = [
+  ['Zurich', 47.3769, 8.5417],
+  ['Tokyo', 35.6762, 139.6503],
+  ['New York', 40.7128, -74.006],
+  ['Reykjavik', 64.1466, -21.9426],
+  ['Quito', -0.1807, -78.4678],
+  ['Cape Town', -33.9249, 18.4241],
+  ['Sydney', -33.8688, 151.2093],
+];
+const PLACEHOLDER = { coarse: 0x1234abcd, fine: 0x9876fedc };
+const M_PER_DEG = 111195;
+
+const state = {
+  ctx: null,
+  node: null,
+  analyser: null,
+  streamDest: null,
+  playing: false,
+  source: 'gps',
+  style: -1,
+  hold: false,
+  seeder: new GeoSeeder(),
+  lastSeed: null,
+  watchId: null,
+  demoTimer: null,
+  demo: null,
+  lastPos: null,
+  wakeLock: null,
+  lastInfoKey: '',
+  route: 'element',
+  speed: new SpeedTracker(),
+  tempoFollow: true,
+  leadInst: 'auto',
+  lastFactor: -1,
+  speedTimer: null,
+  gpsFixAt: null, // performance.now() of the last live GPS fix (null: none yet)
+  bannerNote: '', // why GPS is not in use after a fallback
+  gpsUnavailable: '', // why GPS can never work on this page
+  bpmManual: false,
+  bpm: 120, // slider value
+  curBpm: null, // tempo the engine reported for the current bar
+};
+
+// ------------------------------------------------------------- persistence
+
+function load(key, fallback) {
+  try {
+    const v = localStorage.getItem('geosynth.' + key);
+    return v === null ? fallback : JSON.parse(v);
+  } catch {
+    return fallback;
+  }
+}
+function save(key, value) {
+  try {
+    localStorage.setItem('geosynth.' + key, JSON.stringify(value));
+  } catch {
+    /* storage unavailable: fine */
+  }
+}
+
+// ------------------------------------------------------------------- utils
+
+const isIOS = () =>
+  /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+const hex8 = (n) => (n >>> 0).toString(16).padStart(8, '0');
+
+function setStatus(msg) {
+  $('status').textContent = msg || '';
+  $('startNote').textContent = msg || '';
+}
+
+function fmtCoord(v, pos, neg) {
+  return Math.abs(v).toFixed(5) + '°' + (v >= 0 ? pos : neg);
+}
+
+// ----------------------------------------------------------------- audio
+
+async function startAudio() {
+  const Ctx = window.AudioContext || window.webkitAudioContext;
+  if (!Ctx) throw new Error('Web Audio is not supported in this browser.');
+  try {
+    if (navigator.audioSession) navigator.audioSession.type = 'playback';
+  } catch {
+    /* optional API */
+  }
+  const ctx = new Ctx({ latencyHint: 'playback' });
+  state.ctx = ctx;
+  const node = await createEngineNode(ctx);
+  const analyser = ctx.createAnalyser();
+  analyser.fftSize = 512;
+  analyser.smoothingTimeConstant = 0.82;
+  node.connect(analyser);
+  state.node = node;
+  state.analyser = analyser;
+  ctx.onstatechange = () => {
+    if (ctx.state === 'suspended' && state.playing) setStatus('Audio was interrupted. Tap Pause/Play to resume.');
+  };
+  node.port.postMessage({ type: 'volume', value: Number($('volume').value) });
+  await applyRoute();
+  state.playing = true;
+  if (ctx.state === 'suspended') await ctx.resume();
+}
+
+// Preferred: the engine in an AudioWorklet (own thread, glitch-free). If the
+// worklet cannot load (unsupported, blocked by CSP, bad URL), run the same
+// engine on the main thread through a ScriptProcessorNode instead.
+async function createEngineNode(ctx) {
+  if ('audioWorklet' in ctx) {
+    try {
+      await ctx.audioWorklet.addModule(window.GEOSYNTH_WORKLET_URL || 'worklet.bundle.js');
+      const node = new AudioWorkletNode(ctx, 'geosynth', {
+        numberOfInputs: 0,
+        numberOfOutputs: 1,
+        outputChannelCount: [2],
+      });
+      node.port.onmessage = onWorkletMessage;
+      state.engineMode = 'worklet';
+      return node;
+    } catch (e) {
+      /* fall through to the main-thread engine */
+    }
+  }
+  const EngineClass =
+    typeof Engine !== 'undefined' ? Engine : (await import('./engine/engine.js')).Engine;
+  const engine = new EngineClass(ctx.sampleRate);
+  engine.onBar = (plan, info) =>
+    onWorkletMessage({ data: { type: 'bar', info, bar: plan.bar, section: plan.section, layers: plan.layers, bpm: plan.bpm } });
+  const sp = ctx.createScriptProcessor(2048, 0, 2);
+  sp.onaudioprocess = (ev) => {
+    const out = ev.outputBuffer;
+    engine.render(out.getChannelData(0), out.getChannelData(1), out.length);
+  };
+  sp.port = {
+    postMessage: (m) => {
+      if (m.type === 'seed') engine.setSeed(m.seed);
+      else if (m.type === 'volume') engine.setVolume(m.value);
+      else if (m.type === 'tempo') engine.setTempoFactor(m.factor);
+      else if (m.type === 'bpm') engine.setTempoOverride(m.bpm);
+      else if (m.type === 'lead') engine.setLeadPatch(m.patch, m.lo, m.hi);
+    },
+  };
+  state.engineMode = 'main-thread';
+  return sp;
+}
+
+async function applyRoute() {
+  const { ctx, analyser } = state;
+  if (!ctx || !analyser) return;
+  const sink = $('sink');
+  try {
+    analyser.disconnect();
+  } catch {
+    /* not connected */
+  }
+  if (state.route === 'element') {
+    try {
+      if (!state.streamDest) state.streamDest = ctx.createMediaStreamDestination();
+      analyser.connect(state.streamDest);
+      sink.srcObject = state.streamDest.stream;
+      await sink.play();
+      return;
+    } catch (e) {
+      setStatus('Media player route unavailable here, using direct output.');
+      try {
+        analyser.disconnect();
+      } catch {
+        /* ignore */
+      }
+      state.route = 'direct';
+      $('route').value = 'direct';
+    }
+  }
+  sink.pause();
+  sink.srcObject = null;
+  analyser.connect(ctx.destination);
+}
+
+function sendSeed(seed) {
+  if (!state.node) return;
+  state.node.port.postMessage({
+    type: 'seed',
+    seed: { style: state.style, coarse: seed.coarse >>> 0, fine: seed.fine >>> 0 },
+  });
+}
+
+function onWorkletMessage(ev) {
+  const m = ev.data;
+  if (!m || m.type !== 'bar') return;
+  const info = m.info;
+  state.curBpm = info.bpm;
+  showBpm();
+  $('styleName').textContent = info.styleName;
+  $('keyInfo').textContent = `${info.key} ${info.scale}  ·  ${info.bpm} bpm`;
+  document.documentElement.style.setProperty('--hue', String(HUES[info.style] ?? 190));
+  for (const el of document.querySelectorAll('#layers [data-layer]')) {
+    el.classList.toggle('on', !!m.layers[el.dataset.layer]);
+  }
+  const key = `${info.styleName}|${info.key}|${info.scale}`;
+  if (key !== state.lastInfoKey) {
+    state.lastInfoKey = key;
+    updateMediaSession(info);
+  }
+}
+
+function updateMediaSession(info) {
+  if (!('mediaSession' in navigator) || typeof MediaMetadata === 'undefined') return;
+  try {
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: `${info.styleName} in ${info.key} ${info.scale}`,
+      artist: 'GeoSynth',
+      album: 'Endless',
+    });
+  } catch {
+    /* ignore */
+  }
+}
+
+async function setPlaying(on) {
+  const { ctx } = state;
+  if (!ctx) return;
+  if (on) {
+    await ctx.resume();
+    if (state.route === 'element') {
+      try {
+        await $('sink').play();
+      } catch {
+        /* ignore */
+      }
+    }
+  } else {
+    $('sink').pause();
+    await ctx.suspend();
+  }
+  state.playing = on;
+  $('playBtn').textContent = on ? 'Pause' : 'Play';
+  if ('mediaSession' in navigator) navigator.mediaSession.playbackState = on ? 'playing' : 'paused';
+}
+
+// -------------------------------------------------------------- position
+
+// Banner: is the music following a live GPS position, or not?
+function bannerInfo() {
+  const parts = [];
+  let mode;
+  let title;
+  if (state.source === 'gps' && state.gpsUnavailable) {
+    mode = 'off';
+    title = 'Not using GPS';
+    parts.push(state.gpsUnavailable);
+  } else if (state.source === 'gps') {
+    if (!state.node) {
+      mode = 'wait';
+      title = 'GPS selected';
+      parts.push('starts when you tap Start');
+    } else if (state.gpsFixAt === null) {
+      mode = 'wait';
+      title = 'Waiting for a GPS fix';
+      parts.push('placeholder music until the first fix');
+    } else {
+      const age = performance.now() - state.gpsFixAt;
+      if (age > GPS_STALE_MS) {
+        mode = 'wait';
+        title = 'GPS: no new fix';
+        parts.push(`last one ${Math.round(age / 1000)} s ago (standing still or weak signal)`);
+      } else {
+        mode = 'live';
+        title = 'Using live GPS position';
+        const acc = state.lastPos ? state.lastPos.acc : 0;
+        if (acc > 0) parts.push(`accuracy ±${Math.round(acc)} m`);
+      }
+    }
+  } else {
+    mode = 'off';
+    title = 'Not using GPS';
+    parts.push(state.source === 'demo' ? 'simulated walk' : 'manual position');
+    const why = state.bannerNote || state.gpsUnavailable;
+    if (why) parts.push(why);
+  }
+  if (state.hold) parts.push('music held');
+  return { mode, title, detail: parts.join(' · ') };
+}
+
+function updateBanner() {
+  const b = bannerInfo();
+  const el = $('posBanner');
+  if (el.dataset.gps !== b.mode) el.dataset.gps = b.mode;
+  if ($('bannerTitle').textContent !== b.title) $('bannerTitle').textContent = b.title;
+  if ($('bannerDetail').textContent !== b.detail) $('bannerDetail').textContent = b.detail;
+}
+
+function onFix(lat, lon, acc, gpsSpeed) {
+  state.lastPos = { lat, lon, acc };
+  if (state.source === 'gps') {
+    state.gpsFixAt = performance.now();
+    updateBanner();
+  }
+  state.speed.update(lat, lon, acc, performance.now(), gpsSpeed);
+  $('posText').textContent =
+    `${fmtCoord(lat, 'N', 'S')}  ${fmtCoord(lon, 'E', 'W')}` + (acc > 0 ? `  ±${Math.round(acc)} m` : '');
+  if (state.hold) return;
+  const seed = state.seeder.update(lat, lon, acc, performance.now());
+  if (!seed) return;
+  state.lastSeed = seed;
+  $('cellText').textContent = `region ${hex8(seed.coarse)}  ·  spot ${hex8(seed.fine)}`;
+  sendSeed(seed);
+}
+
+function stopSources() {
+  if (state.watchId !== null && navigator.geolocation) navigator.geolocation.clearWatch(state.watchId);
+  state.watchId = null;
+  if (state.demoTimer) clearInterval(state.demoTimer);
+  state.demoTimer = null;
+}
+
+// GPS cannot be used: switch to Manual (not saved as the preference) and say why.
+function fallBackToManual(note, msg) {
+  setSource('manual', false);
+  state.bannerNote = note;
+  updateBanner();
+  setStatus(msg);
+}
+
+function startGps() {
+  if (!window.isSecureContext) {
+    fallBackToManual('GPS needs HTTPS', 'GPS needs HTTPS (or localhost). Use Manual or Demo walk here, or open the HTTPS address.');
+    return;
+  }
+  if (!navigator.geolocation) {
+    fallBackToManual('this browser has no geolocation', 'This browser has no geolocation. Using Manual.');
+    return;
+  }
+  $('posText').textContent = 'waiting for a GPS fix... (playing a placeholder meanwhile)';
+  state.watchId = navigator.geolocation.watchPosition(
+    (p) => {
+      setStatus('');
+      onFix(p.coords.latitude, p.coords.longitude, p.coords.accuracy, p.coords.speed);
+    },
+    (err) => {
+      if (err.code === 1) {
+        fallBackToManual(
+          'location permission denied',
+          'Location permission denied. Switched to Manual; allow location in the browser settings to use GPS.'
+        );
+      } else {
+        setStatus('No GPS fix yet (' + (err.message || 'unavailable') + '). Still trying.');
+        updateBanner();
+      }
+    },
+    { enableHighAccuracy: true, maximumAge: 5000, timeout: 30000 }
+  );
+}
+
+function applyManual() {
+  const lat = parseFloat($('latIn').value.replace(',', '.'));
+  const lon = parseFloat($('lonIn').value.replace(',', '.'));
+  if (!(Math.abs(lat) <= 90) || !(Math.abs(lon) <= 180)) {
+    setStatus('Latitude must be -90..90 and longitude -180..180.');
+    return;
+  }
+  setStatus('');
+  save('manual', [lat, lon]);
+  onFix(lat, lon, 0);
+}
+
+function startDemo() {
+  const base = state.lastPos || { lat: 47.3769, lon: 8.5417 };
+  state.demo = { lat: base.lat, lon: base.lon, heading: Math.random() * Math.PI * 2 };
+  const tick = () => {
+    const d = state.demo;
+    const v = Number($('demoSpeed').value) || 30;
+    d.heading += (Math.random() - 0.5) * 0.5;
+    d.lat += (v * Math.cos(d.heading)) / M_PER_DEG;
+    d.lon += (v * Math.sin(d.heading)) / (M_PER_DEG * Math.max(0.2, Math.cos((d.lat * Math.PI) / 180)));
+    if (Math.abs(d.lat) > 80) d.heading += Math.PI;
+    if (d.lon > 180) d.lon -= 360;
+    if (d.lon < -180) d.lon += 360;
+    onFix(d.lat, d.lon, 5);
+  };
+  tick();
+  state.demoTimer = setInterval(tick, 1000);
+}
+
+function setSource(src, persist = true) {
+  state.source = src;
+  if (persist) save('source', src);
+  stopSources();
+  state.gpsFixAt = null;
+  state.bannerNote = '';
+  state.speed = new SpeedTracker();
+  state.seeder =
+    src === 'gps' ? new GeoSeeder() : new GeoSeeder({ minFineHoldMs: 3000, fineAccuracyM: 1e9 });
+  for (const b of document.querySelectorAll('#source button')) {
+    b.setAttribute('aria-checked', String(b.dataset.src === src));
+  }
+  $('manualPanel').hidden = src !== 'manual';
+  $('demoPanel').hidden = src !== 'demo';
+  updateBanner();
+  if (!state.node) return;
+  if (src === 'gps') startGps();
+  else if (src === 'manual') applyManual();
+  else startDemo();
+}
+
+// ------------------------------------------------- tempo follows movement
+
+function kmh(v) {
+  return (v * 3.6).toFixed(v * 3.6 < 10 ? 1 : 0);
+}
+
+function sendTempo() {
+  if (!state.node) return;
+  const f = state.tempoFollow ? state.speed.factor : null;
+  const key = f === null ? -1 : Math.round(f * 200); // resend on ~0.5% change
+  if (key !== state.lastFactor) {
+    state.lastFactor = key;
+    state.node.port.postMessage({ type: 'tempo', factor: f });
+  }
+}
+
+function speedTick() {
+  state.speed.tick(performance.now());
+  sendTempo();
+  updateBanner();
+  const v = state.speed.speed;
+  let txt;
+  if (state.bpmManual) {
+    txt = 'tempo set by hand (slider)';
+  } else if (state.tempoFollow) {
+    const atMax = v >= MAX_SPEED_MS * 0.98; // the speed is capped at 100 km/h
+    const moving = v < 0.3 ? 'not at all' : `${kmh(v)} km/h${atMax ? ' (max)' : ''}`;
+    txt = `moving ${moving}  \u00b7  tempo ${Math.round(state.speed.factor * 100)} %`;
+  } else {
+    txt = 'tempo set by the place';
+  }
+  if ($('speedText').textContent !== txt) $('speedText').textContent = txt;
+}
+
+// Manual BPM slider. While it is off, the slider just shows the tempo that is playing.
+function sendBpm() {
+  if (!state.node) return;
+  state.node.port.postMessage({ type: 'bpm', bpm: state.bpmManual ? state.bpm : null });
+}
+
+function showBpm() {
+  const shown = state.bpmManual ? state.bpm : state.curBpm;
+  if (shown !== null && shown !== undefined) {
+    $('bpmOut').textContent = `${Math.round(shown)} bpm`;
+    if (!state.bpmManual) $('bpmSlider').value = String(Math.round(shown));
+  }
+  $('bpmMode').textContent = state.bpmManual ? 'set by hand' : 'automatic';
+}
+
+function setLeadInstrument(id) {
+  state.leadInst = id;
+  save('lead', id);
+  const inst = LEAD_INSTRUMENTS.find((i) => i.id === id) || LEAD_INSTRUMENTS[0];
+  for (const c of $('leadChips').children) c.setAttribute('aria-pressed', String(c.dataset.lead === id));
+  if (state.node) state.node.port.postMessage({ type: 'lead', patch: inst.patch, lo: inst.lo, hi: inst.hi });
+}
+
+// -------------------------------------------------------------------- UI
+
+function buildStyleChips() {
+  const wrap = $('styleChips');
+  wrap.textContent = '';
+  const mk = (label, idx, title) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = label;
+    b.title = title || '';
+    b.dataset.style = String(idx);
+    b.setAttribute('aria-pressed', String(idx === state.style));
+    b.addEventListener('click', () => {
+      state.style = idx;
+      save('style', idx);
+      for (const c of wrap.children) c.setAttribute('aria-pressed', String(Number(c.dataset.style) === idx));
+      if (state.lastSeed) sendSeed(state.lastSeed);
+      else sendSeed(PLACEHOLDER);
+    });
+    wrap.appendChild(b);
+  };
+  mk('Auto (GPS)', -1, 'Let the location choose');
+  STYLES.forEach((s, i) => mk(s.name, i, s.blurb));
+}
+
+function buildLeadChips() {
+  const wrap = $('leadChips');
+  wrap.textContent = '';
+  for (const inst of LEAD_INSTRUMENTS) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = inst.name;
+    b.dataset.lead = inst.id;
+    b.setAttribute('aria-pressed', String(inst.id === state.leadInst));
+    b.addEventListener('click', () => setLeadInstrument(inst.id));
+    wrap.appendChild(b);
+  }
+}
+
+function buildPresets() {
+  const wrap = $('presets');
+  for (const [name, lat, lon] of PRESETS) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = name;
+    b.addEventListener('click', () => {
+      $('latIn').value = String(lat);
+      $('lonIn').value = String(lon);
+      applyManual();
+    });
+    wrap.appendChild(b);
+  }
+}
+
+// ------------------------------------------------------------ visualizer
+
+function startViz() {
+  const canvas = $('viz');
+  const g = canvas.getContext('2d');
+  if (!g) return;
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const fit = () => {
+    canvas.width = Math.max(64, Math.floor(canvas.clientWidth * dpr));
+    canvas.height = Math.max(32, Math.floor(canvas.clientHeight * dpr));
+  };
+  fit();
+  window.addEventListener('resize', fit);
+  let data = null;
+  let last = 0;
+  const frame = (t) => {
+    requestAnimationFrame(frame);
+    if (document.hidden || !state.analyser || t - last < 33) return;
+    last = t;
+    if (!data) data = new Uint8Array(state.analyser.frequencyBinCount);
+    state.analyser.getByteFrequencyData(data);
+    const w = canvas.width;
+    const h = canvas.height;
+    g.clearRect(0, 0, w, h);
+    const hue = Number(document.documentElement.style.getPropertyValue('--hue')) || 190;
+    const bars = 56;
+    const bw = w / bars;
+    const maxBin = Math.floor(data.length * 0.75);
+    for (let i = 0; i < bars; i++) {
+      const a = Math.floor(Math.pow(i / bars, 1.8) * maxBin);
+      const b = Math.max(a + 1, Math.floor(Math.pow((i + 1) / bars, 1.8) * maxBin));
+      let m = 0;
+      for (let k = a; k < b; k++) m = Math.max(m, data[k]);
+      const bh = (m / 255) * h * 0.95;
+      g.fillStyle = `hsl(${hue} 85% ${35 + (m / 255) * 35}%)`;
+      g.fillRect(i * bw + 1, h - bh, Math.max(1, bw - 2), bh);
+    }
+  };
+  requestAnimationFrame(frame);
+}
+
+// ------------------------------------------------------------- wake lock
+
+async function updateWakeLock() {
+  try {
+    if ($('wake').checked && 'wakeLock' in navigator && !document.hidden && !state.wakeLock) {
+      state.wakeLock = await navigator.wakeLock.request('screen');
+      state.wakeLock.addEventListener('release', () => {
+        state.wakeLock = null;
+      });
+    } else if (!$('wake').checked && state.wakeLock) {
+      await state.wakeLock.release();
+      state.wakeLock = null;
+    }
+  } catch {
+    /* denied or unsupported */
+  }
+}
+
+// ------------------------------------------------------------------ init
+
+async function onStart() {
+  const btn = $('startBtn');
+  btn.disabled = true;
+  btn.textContent = 'Starting...';
+  setStatus('');
+  try {
+    await startAudio();
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = 'Start listening';
+    setStatus('Could not start audio: ' + (e && e.message ? e.message : e));
+    return;
+  }
+  $('start').hidden = true;
+  $('player').hidden = false;
+  startViz();
+  sendSeed(PLACEHOLDER); // sound immediately; replaced when a position arrives
+  setLeadInstrument(state.leadInst);
+  sendBpm();
+  state.lastFactor = -2;
+  speedTick();
+  state.speedTimer = setInterval(speedTick, 1000);
+  setSource(state.source);
+  updateWakeLock();
+  if ('mediaSession' in navigator) {
+    try {
+      navigator.mediaSession.setActionHandler('play', () => setPlaying(true));
+      navigator.mediaSession.setActionHandler('pause', () => setPlaying(false));
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+function init() {
+  state.style = load('style', -1);
+  state.source = load('source', 'gps');
+  state.route = load('route', isIOS() ? 'direct' : 'element');
+  state.tempoFollow = load('tempoFollow', true);
+  state.leadInst = load('lead', 'auto');
+  $('tempoFollow').checked = state.tempoFollow;
+  state.bpm = Math.max(40, Math.min(220, Math.round(Number(load('bpm', 120)) || 120)));
+  state.bpmManual = load('bpmManual', false) === true;
+  $('bpmManual').checked = state.bpmManual;
+  $('bpmSlider').value = String(state.bpm);
+  showBpm();
+  $('route').value = state.route;
+  $('volume').value = String(load('volume', 0.8));
+  const man = load('manual', null);
+  if (Array.isArray(man)) {
+    $('latIn').value = String(man[0]);
+    $('lonIn').value = String(man[1]);
+  }
+  buildStyleChips();
+  buildLeadChips();
+  buildPresets();
+  $('tempoFollow').addEventListener('change', (e) => {
+    state.tempoFollow = e.target.checked;
+    save('tempoFollow', state.tempoFollow);
+    speedTick();
+  });
+
+  $('bpmSlider').addEventListener('input', (e) => {
+    state.bpm = Number(e.target.value);
+    state.bpmManual = true; // touching the slider takes over the tempo
+    $('bpmManual').checked = true;
+    save('bpm', state.bpm);
+    save('bpmManual', true);
+    sendBpm();
+    showBpm();
+    speedTick();
+  });
+  $('bpmManual').addEventListener('change', (e) => {
+    state.bpmManual = e.target.checked;
+    // Start from the tempo that is playing, so switching on does not jump.
+    if (state.bpmManual && state.curBpm) {
+      state.bpm = Math.max(40, Math.min(220, Math.round(state.curBpm)));
+      $('bpmSlider').value = String(state.bpm);
+      save('bpm', state.bpm);
+    }
+    save('bpmManual', state.bpmManual);
+    sendBpm();
+    showBpm();
+    speedTick();
+  });
+  $('startBtn').addEventListener('click', onStart);
+  $('playBtn').addEventListener('click', () => setPlaying(!state.playing));
+  $('volume').addEventListener('input', (e) => {
+    const v = Number(e.target.value);
+    save('volume', v);
+    if (state.node) state.node.port.postMessage({ type: 'volume', value: v });
+  });
+  for (const b of document.querySelectorAll('#source button')) {
+    b.addEventListener('click', () => setSource(b.dataset.src));
+  }
+  $('applyPos').addEventListener('click', applyManual);
+  $('hold').addEventListener('change', (e) => {
+    state.hold = e.target.checked;
+    updateBanner();
+  });
+  $('wake').addEventListener('change', updateWakeLock);
+  $('route').addEventListener('change', async (e) => {
+    state.route = e.target.value;
+    save('route', state.route);
+    await applyRoute();
+  });
+  document.addEventListener('visibilitychange', async () => {
+    if (!document.hidden) {
+      updateWakeLock();
+      if (state.ctx && state.playing && state.ctx.state === 'suspended') {
+        try {
+          await state.ctx.resume();
+        } catch {
+          /* needs a tap */
+        }
+      }
+    }
+  });
+
+  if (!window.isSecureContext) {
+    $('startNote').textContent = 'Not a secure context: GPS is unavailable, Manual and Demo walk still work.';
+    state.gpsUnavailable = 'GPS needs HTTPS';
+  } else if (!navigator.geolocation) {
+    state.gpsUnavailable = 'this browser has no geolocation';
+  }
+  if (window.GEOSYNTH_NO_GPS) {
+    // Hosted somewhere that refuses location (e.g. an embedded frame).
+    state.gpsUnavailable = 'GPS is blocked on this page';
+    state.source = state.source === 'gps' ? 'manual' : state.source;
+    const gpsBtn = document.querySelector('#source [data-src="gps"]');
+    if (gpsBtn) gpsBtn.hidden = true;
+    for (const b of document.querySelectorAll('#source button')) b.style.gridColumn = 'auto';
+    $('startNote').textContent =
+      'GPS is not available on this page. Pick a city, enter coordinates, or use Demo walk to hear how place changes the music.';
+  }
+  if ('serviceWorker' in navigator && window.isSecureContext && !window.GEOSYNTH_NO_SW) {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
+  updateBanner();
+  $('version').textContent = 'v' + VERSION;
+  // Expose for debugging/testing only.
+  window.__geosynth = state;
+}
+
+init();
+
+
+})();
+
+</script>
+</body>
+</html>
