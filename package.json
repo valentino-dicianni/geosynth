@@ -1,6 +1,6 @@
 {
   "name": "geosynth",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "private": true,
   "type": "module",
   "description": "Endless procedural synth music seeded by GPS position (PWA, Web Audio AudioWorklet).",

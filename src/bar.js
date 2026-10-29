@@ -17,6 +17,8 @@ export function onWorkletMessage(ev) {
   for (const el of document.querySelectorAll('#layers [data-layer]')) {
     el.classList.toggle('on', !!m.layers[el.dataset.layer]);
   }
+  const leadNow = info.leadName ? `Instrument here: ${info.leadName}` : '';
+  if ($('leadNow').textContent !== leadNow) $('leadNow').textContent = leadNow;
   const key = `${info.styleName}|${info.key}|${info.scale}`;
   if (key !== state.lastInfoKey) {
     state.lastInfoKey = key;

@@ -5,6 +5,8 @@ import { Composer } from '../engine/composer.js';
 import { STYLES } from '../engine/theory.js';
 import { PATCHES, LEAD_INSTRUMENTS } from '../engine/patches.js';
 import { SynthVoice } from '../engine/voices.js';
+import { makeInstrument } from '../engine/instrument.js';
+import { stream } from '../engine/rng.js';
 
 const SR = 48000;
 const BLOCK = 128;
@@ -333,6 +335,123 @@ check('Techno: kick on every beat from the first bar, 16th hats, acid bass in th
   }
 });
 
+check('procedural instrument: deterministic, varied, valid parameters', () => {
+  const make = (n) => makeInstrument(stream(n, 901));
+  assert.equal(JSON.stringify(make(5)), JSON.stringify(make(5)), 'same seed, same instrument');
+  const seen = new Set();
+  const waves = new Set();
+  for (let n = 0; n < 300; n++) {
+    const p = make(n * 7919 + 3);
+    seen.add(JSON.stringify(p));
+    waves.add(p.wave);
+    for (const [k, v] of Object.entries(p)) {
+      if (typeof v === 'number') assert.ok(Number.isFinite(v), `${k} = ${v}`);
+    }
+    assert.ok(['saw', 'pulse', 'tri', 'fm', 'reed', 'organ'].includes(p.wave));
+    assert.ok(p.a > 0 && p.d > 0 && p.r > 0 && p.s >= 0 && p.s <= 1);
+    assert.ok(p.gain >= 0.04 && p.gain <= 0.9);
+    assert.ok(p.lo < p.hi && p.hi - p.lo >= 24);
+    assert.ok(typeof p.name === 'string' && p.name.length > 3);
+  }
+  assert.equal(seen.size, 300, 'every seed is a different instrument');
+  assert.equal(waves.size, 6, 'all oscillator types appear');
+});
+
+check('procedural instruments render finite, bounded, audible audio in their register at matched level', () => {
+  const levels = [];
+  for (let n = 0; n < 60; n++) {
+    const p = makeInstrument(stream(n * 104729 + 11, 901));
+    for (const note of [p.lo + 3, (p.lo + p.hi) >> 1, p.hi - 3]) {
+      const v = new SynthVoice(SR);
+      const N = SR;
+      const L = new Float32Array(N);
+      const R = new Float32Array(N);
+      const A = new Float32Array(N);
+      const B = new Float32Array(N);
+      v.start(note, 0.8, N / 2, p, 0.5, 0, 0.3);
+      for (let o = 0; o < N; o += 128) v.render(128, o, L, R, A, B);
+      let peak = 0;
+      let sum = 0;
+      for (let i = 0; i < N; i++) {
+        assert.ok(Number.isFinite(L[i]), `${p.name} n${note}: non-finite`);
+        peak = Math.max(peak, Math.abs(L[i]));
+        sum += L[i] * L[i];
+      }
+      assert.ok(peak < 1.2, `${p.name} n${note}: peak ${peak}`);
+      assert.ok(peak > 0.005, `${p.name} n${note}: silent`);
+      levels.push(10 * Math.log10(sum / N + 1e-12));
+    }
+  }
+  levels.sort((a, b) => a - b);
+  const spread = levels[Math.floor(levels.length * 0.9)] - levels[Math.floor(levels.length * 0.1)];
+  assert.ok(spread < 10, 'level spread (10th-90th percentile) ' + spread.toFixed(1) + ' dB');
+});
+
+check('procedural lead: forced on in every style, in the instrument register, name and instrument stable per place', () => {
+  for (let si = 0; si < STYLES.length; si++) {
+    const c = new Composer();
+    c.setSeed({ style: si, coarse: 500 + si, fine: 7 });
+    c.setLeadProcedural(true);
+    let leads = 0;
+    let name = null;
+    for (let b = 0; b < 32; b++) {
+      const plan = c.nextBar();
+      assert.equal(plan.layers.lead, true);
+      assert.ok(plan.leadSynth && plan.leadSynth.gain > 0);
+      const { lo, hi } = plan.leadSynth;
+      for (const st of plan.steps) for (const e of st) if (e.voice === 'lead') {
+        leads++;
+        assert.ok(e.note >= lo && e.note <= hi, `${STYLES[si].name}: note ${e.note} outside ${lo}-${hi}`);
+      }
+      const base = c.info().leadName.split(',')[0];
+      if (name !== null) assert.equal(base.split(' ')[1], name.split(' ')[1], 'same instrument family through the song');
+      name = base;
+    }
+    assert.ok(leads >= 12, `${STYLES[si].name}: only ${leads} lead notes in 32 bars`);
+  }
+  const a = new Composer();
+  const b2 = new Composer();
+  const other = new Composer();
+  for (const [c, coarse] of [[a, 77], [b2, 77], [other, 78]]) {
+    c.setSeed({ style: 0, coarse, fine: 1 });
+    c.setLeadProcedural(true);
+  }
+  const pa = a.nextBar().leadSynth;
+  const pb = b2.nextBar().leadSynth;
+  const po = other.nextBar().leadSynth;
+  assert.equal(JSON.stringify(pa), JSON.stringify(pb), 'same place, same instrument');
+  assert.notEqual(JSON.stringify(pa), JSON.stringify(po), 'another place, another instrument');
+  const off = new Composer();
+  off.setSeed({ style: 0, coarse: 77, fine: 1 });
+  assert.equal(off.nextBar().leadSynth, null, 'no procedural instrument unless asked');
+  assert.equal(off.info().leadName, null);
+});
+
+check('engine: Procedural / named lead / Auto switch each other off, and procedural renders audibly in every style', () => {
+  const e = new Engine(SR);
+  e.setSeed({ style: 0, coarse: 3, fine: 3 });
+  e.setLeadPatch('procedural', 55, 88);
+  assert.equal(e.composer.leadProc, true);
+  assert.equal(e.leadPatch, null);
+  e.setLeadPatch('leadSax', 55, 81);
+  assert.equal(e.composer.leadProc, false);
+  assert.equal(e.leadPatch, PATCHES.leadSax);
+  e.setLeadPatch('procedural', 55, 88);
+  assert.equal(e.leadPatch, null);
+  assert.ok(e.composer.leadOv === null);
+  e.setLeadPatch(null);
+  assert.equal(e.composer.leadProc, false);
+  for (let si = 0; si < STYLES.length; si++) {
+    const en = new Engine(SR);
+    en.setSeed({ style: si, coarse: 900 + si * 13, fine: 5 });
+    en.setLeadPatch('procedural');
+    const { L, R } = render(en, 20);
+    const st = stats(L, R, SR * 2, 20 * SR);
+    assert.equal(st.bad, 0);
+    assert.ok(st.peak <= 1.0 && st.rmsDb > -38 && st.rmsDb < -8, `${STYLES[si].name}: peak ${st.peak} rms ${st.rmsDb}`);
+  }
+});
+
 check('Smoke style swings its off-beat eighths', () => {
   const smoke = STYLES.findIndex((s) => s.id === 'smoke');
   assert.ok(smoke >= 0);
@@ -364,7 +483,7 @@ check('every patch renders finite, audible, bounded audio', () => {
 });
 
 check('lead instruments all exist as patches', () => {
-  for (const i of LEAD_INSTRUMENTS) if (i.patch) assert.ok(PATCHES[i.patch], i.patch);
+  for (const i of LEAD_INSTRUMENTS) if (i.patch && i.patch !== 'procedural') assert.ok(PATCHES[i.patch], i.patch);
 });
 
 console.log(failures ? `\n${failures} test(s) FAILED` : '\nAll engine tests passed');

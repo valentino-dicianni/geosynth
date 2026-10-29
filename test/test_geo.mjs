@@ -14,6 +14,8 @@ function check(name, fn) {
 }
 
 const M_PER_DEG = 111195;
+// Old cell sizes (11 km / 110 m): the mechanics tests below were written for them.
+const LEGACY = { coarseDeg: 0.1, fineDeg: 0.001 };
 
 check('first fix always yields a seed; identical fix yields none', () => {
   const g = new GeoSeeder();
@@ -32,7 +34,7 @@ check('same coordinates on a fresh instance give the same seed', () => {
 });
 
 check('hysteresis: a point just inside the neighbour cell keeps the old cell until 20% past the edge', () => {
-  const g = new GeoSeeder({ minFineHoldMs: 0 });
+  const g = new GeoSeeder({ ...LEGACY, minFineHoldMs: 0 });
   const s0 = g.update(47.5005, 8.0005, 5, 0); // fine cell lat index 47500
   assert.equal(g.update(47.50105, 8.0005, 5, 1000), null, '5% past the edge: stay');
   assert.ok(g.update(47.50125, 8.0005, 5, 2000), '25% past the edge: switch');
@@ -40,7 +42,7 @@ check('hysteresis: a point just inside the neighbour cell keeps the old cell unt
 });
 
 check('GPS jitter (+-15 m) around a fine-cell border does not flip the seed', () => {
-  const g = new GeoSeeder({ minFineHoldMs: 0 });
+  const g = new GeoSeeder({ ...LEGACY, minFineHoldMs: 0 });
   const border = 47.1235; // exactly on a 0.001 degree edge in latitude
   g.update(border + 0.00002, 8.0005, 5, 0);
   let flips = 0;
@@ -53,7 +55,7 @@ check('GPS jitter (+-15 m) around a fine-cell border does not flip the seed', ()
 });
 
 check('walking 300 m changes the fine seed but not the coarse seed', () => {
-  const g = new GeoSeeder({ minFineHoldMs: 0 });
+  const g = new GeoSeeder({ ...LEGACY, minFineHoldMs: 0 });
   const s0 = g.update(48.0, 11.0, 5, 0);
   const s1 = g.update(48.0 + 300 / M_PER_DEG, 11.0, 5, 60000);
   assert.ok(s1, 'fine seed should change');
@@ -63,7 +65,7 @@ check('walking 300 m changes the fine seed but not the coarse seed', () => {
 });
 
 check('driving 25 km changes the coarse seed', () => {
-  const g = new GeoSeeder({ minFineHoldMs: 0 });
+  const g = new GeoSeeder({ ...LEGACY, minFineHoldMs: 0 });
   const s0 = g.update(48.0, 11.0, 5, 0);
   const s1 = g.update(48.0 + 25000 / M_PER_DEG, 11.0, 5, 1000);
   assert.ok(s1 && s1.coarseChanged);
@@ -71,7 +73,7 @@ check('driving 25 km changes the coarse seed', () => {
 });
 
 check('fine updates are rate limited, coarse updates are not', () => {
-  const g = new GeoSeeder({ minFineHoldMs: 20000 });
+  const g = new GeoSeeder({ ...LEGACY, minFineHoldMs: 20000 });
   g.update(48.0, 11.0, 5, 0);
   assert.equal(g.update(48.0 + 400 / M_PER_DEG, 11.0, 5, 5000), null, 'held back');
   assert.ok(g.update(48.0 + 400 / M_PER_DEG, 11.0, 5, 21000), 'released after hold');
@@ -80,11 +82,82 @@ check('fine updates are rate limited, coarse updates are not', () => {
 });
 
 check('poor accuracy (indoors, 800 m) holds the fine seed, still tracks coarse', () => {
-  const g = new GeoSeeder({ minFineHoldMs: 0 });
+  const g = new GeoSeeder({ ...LEGACY, minFineHoldMs: 0 });
   const s0 = g.update(48.0, 11.0, 5, 0);
   assert.equal(g.update(48.0 + 600 / M_PER_DEG, 11.0, 800, 60000), null);
   const s1 = g.update(48.0 + 600 / M_PER_DEG, 11.0, 5, 120000);
   assert.ok(s1 && s1.fine !== s0.fine);
+});
+
+check('default cells: ~250 m for style/key/tempo, ~60 m for melodies, also at 60 N', () => {
+  const widthAt = (lat, field) => {
+    const g = new GeoSeeder({ minFineHoldMs: 0, minCoarseHoldMs: 0, hyst: 0 });
+    let prev = g.update(lat, 10.0, 0, 0)[field];
+    let startLon = null;
+    const widths = [];
+    for (let i = 0; i < 12000; i++) {
+      const lon = 10.0 + i * 0.00001;
+      const s = g.update(lat, lon, 0, i);
+      if (s && s[field] !== prev) {
+        if (startLon !== null) widths.push(distanceM(lat, startLon, lat, lon));
+        startLon = lon;
+        prev = s[field];
+      }
+    }
+    return widths.length ? widths.reduce((a, b) => a + b) / widths.length : NaN;
+  };
+  for (const lat of [0.0005, 60.0005]) {
+    const c = widthAt(lat, 'coarse');
+    const f = widthAt(lat, 'fine');
+    assert.ok(Math.abs(c - 250) < 40, `coarse width at ${lat}: ${c}`);
+    assert.ok(Math.abs(f - 60) < 14, `fine width at ${lat}: ${f}`);
+  }
+});
+
+check('walking at 1.4 m/s gets a new coarse seed (style) every 200-300 m, and never within 100 m', () => {
+  const g = new GeoSeeder({ minCoarseHoldMs: 15000 });
+  g.update(48.0003, 11.0003, 6, 0);
+  let lastLat = 48.0003;
+  let sinceChange = 0;
+  const gaps = [];
+  for (let t = 1; t <= 1800; t++) {
+    const lat = 48.0003 + (1.4 * t) / M_PER_DEG;
+    const s = g.update(lat, 11.0003, 6, t * 1000);
+    sinceChange += distanceM(lastLat, 11.0003, lat, 11.0003);
+    lastLat = lat;
+    if (s && s.coarseChanged) {
+      gaps.push(sinceChange);
+      sinceChange = 0;
+    }
+  }
+  assert.ok(gaps.length >= 8, 'style changes in 2.5 km: ' + gaps.length);
+  const inner = gaps.slice(1); // the first one depends on where the walk started in its cell
+  assert.ok(Math.min(...inner) > 200 && Math.max(...inner) < 300, 'gaps: ' + gaps.map((x) => Math.round(x)).join(','));
+});
+
+check('driving: a new style at most every 15 s, the skipped change is applied afterwards, manual has no hold', () => {
+  const g = new GeoSeeder({ minCoarseHoldMs: 15000, minFineHoldMs: 0 });
+  const s0 = g.update(48.0, 11.0, 5, 0);
+  assert.equal(g.update(48.0 + 600 / M_PER_DEG, 11.0, 5, 5000)?.coarseChanged ?? false, false, 'held at 5 s');
+  const later = g.update(48.0 + 600 / M_PER_DEG, 11.0, 5, 16000);
+  assert.ok(later && later.coarseChanged && later.coarse !== s0.coarse, 'applied after the hold');
+  const m = new GeoSeeder({ minFineHoldMs: 0 });
+  m.update(48.0, 11.0, 0, 0);
+  assert.ok(m.update(35.0, 139.0, 0, 1)?.coarseChanged, 'a chosen place applies immediately');
+});
+
+check('GPS jitter (+-15 m, reported accuracy 15 m) at a coarse or fine border does not flip the seed', () => {
+  for (const [field, deg] of [['coarse', 0.00225], ['fine', 0.00054]]) {
+    const g = new GeoSeeder({ minFineHoldMs: 0, minCoarseHoldMs: 0 });
+    const border = Math.round(47.1 / deg) * deg;
+    g.update(border + 2 / M_PER_DEG, 8.0005, 15, 0);
+    let flips = 0;
+    for (let t = 1; t < 600; t++) {
+      const jitter = (((t * 7919) % 31) - 15) / 15; // +-1
+      if (g.update(border + (jitter * 15) / M_PER_DEG, 8.0005, 15, t * 1000)) flips++;
+    }
+    assert.equal(flips, 0, `${field}: ${flips} flips`);
+  }
 });
 
 check('invalid input is ignored', () => {
@@ -94,9 +167,9 @@ check('invalid input is ignored', () => {
   assert.equal(g.update(40, 8, 99999999, 0), null);
 });
 
-check('longitude step is latitude-corrected: ~110 m cells at 60 N and at the equator', () => {
+check('longitude step is latitude-corrected (legacy 110 m cells): same width at 60 N and at the equator', () => {
   const widthAt = (lat) => {
-    const g = new GeoSeeder({ minFineHoldMs: 0, hyst: 0 });
+    const g = new GeoSeeder({ ...LEGACY, minFineHoldMs: 0, hyst: 0 });
     let prev = g.update(lat, 10.0, 5, 0).fine;
     let startLon = null;
     const widths = [];
@@ -118,7 +191,7 @@ check('longitude step is latitude-corrected: ~110 m cells at 60 N and at the equ
 });
 
 check('southern/western hemispheres work (negative cell indices)', () => {
-  const g = new GeoSeeder({ minFineHoldMs: 0 });
+  const g = new GeoSeeder({ ...LEGACY, minFineHoldMs: 0 });
   const s0 = g.update(-33.8688, -70.6483, 5, 0);
   const s1 = g.update(-33.8688 - 400 / M_PER_DEG, -70.6483, 5, 1000);
   assert.ok(s0 && s1 && s0.fine !== s1.fine);

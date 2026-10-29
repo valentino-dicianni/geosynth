@@ -472,605 +472,6 @@ const STYLES = [
 ];
 
 
-/* ---- engine/composer.js ---- */
-// Procedural composer. Pure function of (seed, bar count): no audio, no
-// floating-point state that depends on the platform beyond IEEE basics, and
-// every random draw comes from a seeded stream, so the same seed always
-// produces the same music.
-//
-// nextBar() returns a plan for one bar (16 sixteenth-note steps):
-//   steps[s] = array of note events { voice, note, vel, len }
-// voices: pad, bass, arp, lead, kick, snare, hat, tom
-
-
-const STEPS_PER_BAR = 16;
-const MAX_BPM_STEP = 12;
-// At full speed (100 km/h) every style reaches at least this tempo, so a slow
-// style like Abyss does not top out at 70 bpm.
-const FOLLOW_TOP_BPM = 160;
-const BPM_MIN = 40;
-const BPM_MAX = 220;
-const METER = [1, 0.15, 0.3, 0.15, 0.6, 0.15, 0.3, 0.15, 0.8, 0.15, 0.3, 0.15, 0.6, 0.15, 0.3, 0.15];
-const LAYERS = ['pad', 'bass', 'arp', 'lead', 'drums'];
-
-class Composer {
-  constructor() {
-    this.pending = null;
-    this.s = null;
-    this.barCount = 0;
-    this.leadOv = null;
-    this.tempoFactor = null;
-    this.tempoOv = null;
-    this.curBpm = null;
-  }
-
-  // seed: { style: -1 (auto) | index, coarse: u32, fine: u32 }
-  setSeed(seed) {
-    this.pending = { style: seed.style, coarse: seed.coarse >>> 0, fine: seed.fine >>> 0 };
-  }
-
-  hasPending() {
-    return this.pending !== null;
-  }
-
-  // Tempo follows movement: factor 0..1 maps across the style's tempo range
-  // (a little beyond it at both ends). null = use the tempo from the seed.
-  // Applied gradually at bar lines (see nextBar).
-  setTempoFactor(f) {
-    this.tempoFactor = f === null || f === undefined ? null : Math.max(0, Math.min(1, f));
-  }
-
-  // Manual tempo (BPM slider): wins over movement and the seed, and applies at
-  // once rather than being slewed. null returns to movement/seed tempo.
-  setTempoOverride(bpm) {
-    if (bpm === null || bpm === undefined || !Number.isFinite(bpm)) {
-      this.tempoOv = null;
-      return;
-    }
-    this.tempoOv = Math.max(BPM_MIN, Math.min(BPM_MAX, Math.round(bpm)));
-    this.curBpm = this.tempoOv;
-  }
-
-  // Force the lead line on (the user picked a lead instrument) and keep it in
-  // that instrument's range. ov = { lo, hi } midi notes, or null for the
-  // style's own arrangement.
-  setLeadOverride(ov) {
-    this.leadOv = ov ? { lo: ov.lo, hi: ov.hi } : null;
-  }
-
-  info() {
-    const s = this.s;
-    if (!s) return null;
-    return {
-      style: s.styleIdx,
-      styleName: s.style.name,
-      key: NOTE_NAMES[s.pc],
-      scale: s.scaleName,
-      bpm: this.curBpm === null ? s.bpm : this.curBpm,
-    };
-  }
-
-  // ---------------------------------------------------------------- latching
-
-  _latch(seed) {
-    const prev = this.s;
-    const styleIdx =
-      seed.style >= 0 && seed.style < STYLES.length
-        ? seed.style
-        : mix32(seed.coarse ^ 0x57) % STYLES.length;
-    const style = STYLES[styleIdx];
-    const full = !prev || prev.styleIdx !== styleIdx || prev.coarse !== seed.coarse;
-    if (full) this.curBpm = null; // new place/style: take its tempo straight away
-
-    const s = {
-      styleIdx,
-      style,
-      coarse: seed.coarse,
-      fine: seed.fine,
-      sectionIdx: 0,
-      barInSection: 0,
-      sectionBars: 0,
-      prog: [0, 0, 0, 0],
-      motifSeed: 1,
-      layers: {},
-      bright: 0.5,
-      densMul: 1,
-      groove: null,
-      seqPat: [],
-      seqGate: [],
-      answer: false,
-      leadMidi: 74,
-      hum: stream(seed.fine, 77),
-    };
-
-    // Key, mode and tempo come from the coarse cell (stable over ~10 km).
-    const kr = stream(seed.coarse, 11);
-    s.pc = kr.below(12);
-    s.scaleName = style.scales[kr.below(style.scales.length)];
-    s.scale = SCALES[s.scaleName];
-    if (style.pent && s.scaleName !== 'harmonicMinor') {
-      const major = ['ionian', 'lydian', 'mixolydian'].includes(s.scaleName);
-      s.melScale = major ? PENT.major : PENT.minor;
-    } else {
-      s.melScale = s.scale;
-    }
-    s.bpm = style.bpm[0] + kr.below(style.bpm[1] - style.bpm[0] + 1);
-
-    s.sectionBars = 8 * style.chordBars;
-    this.s = s;
-    this._newSection(full);
-  }
-
-  _newSection(intro) {
-    const s = this.s;
-    const style = s.style;
-    const secSeed = mix32((s.fine ^ Math.imul(s.sectionIdx + 1, 0x9e3779b1)) >>> 0);
-    const r = stream(secSeed, 1);
-
-    // Harmony: keep the last progression 40% of the time so ideas come back.
-    const keepProg = s.sectionIdx > 0 && r.chance(0.4);
-    const pr = stream(secSeed, 2);
-    if (!keepProg) {
-      s.prog = makeProgression(pr, s.scaleName, 4, style.stay, style.starts);
-    }
-    if (!(s.sectionIdx > 0 && r.chance(0.5))) s.motifSeed = stream(secSeed, 3).next();
-    s.answer = r.chance(0.6);
-
-    // Arrangement: which layers play in this section.
-    const layers = {};
-    if (intro) {
-      const cand = ['pad', 'bass', 'arp']
-        .map((n) => [n, style.layerProb[n]])
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 2);
-      for (const n of LAYERS) layers[n] = false;
-      for (const [n] of cand) layers[n] = true;
-      if (style.introDrums) layers.drums = true; // e.g. techno opens with the kick
-    } else {
-      let count = 0;
-      for (const n of LAYERS) {
-        layers[n] = r.chance(style.layerProb[n]);
-        if (layers[n]) count++;
-      }
-      if (count < 2) {
-        const top = LAYERS.map((n) => [n, style.layerProb[n]])
-          .sort((a, b) => b[1] - a[1])
-          .slice(0, 2);
-        for (const [n] of top) layers[n] = true;
-      }
-    }
-    if (!style.drums) layers.drums = false;
-    s.layers = layers;
-
-    s.bright = style.bright[0] + r.float() * (style.bright[1] - style.bright[0]);
-    s.densMul = 0.6 + r.float() * 0.8;
-
-    // Drum groove for the whole section.
-    if (style.drums) {
-      const d = style.drums;
-      const kick = style.drums.kick ? pat(d.kick) : [];
-      const gr = stream(secSeed, 4);
-      for (const g of [3, 7, 10, 11, 14, 15]) {
-        if (gr.chance(d.ghost * 0.4) && !kick.includes(g)) kick.push(g);
-      }
-      s.groove = { kick, snare: d.snare ? pat(d.snare) : [] };
-    }
-
-    // Arpeggio "seq" mode pattern.
-    const sr = stream(secSeed, 5);
-    s.seqPat = [];
-    s.seqGate = [];
-    for (let i = 0; i < 16; i++) {
-      s.seqPat.push(sr.below(6));
-      s.seqGate.push(sr.chance(0.78) ? 1 : 0);
-    }
-
-    s.barInSection = 0;
-    s.secSeed = secSeed;
-  }
-
-  // ---------------------------------------------------------------- planning
-
-  nextBar() {
-    if (this.pending) {
-      this._latch(this.pending);
-      this.pending = null;
-      this.barCount = 0;
-    } else if (!this.s) {
-      this._latch({ style: -1, coarse: 1, fine: 1 });
-    }
-    let s = this.s;
-    if (s.barInSection >= s.sectionBars) {
-      s.sectionIdx++;
-      this._newSection(false);
-    }
-
-    const style = s.style;
-
-    // Tempo: from the seed, or following movement speed. Moves at most
-    // MAX_BPM_STEP per bar so changes feel like accelerating, not jumping.
-    let targetBpm = s.bpm;
-    if (this.tempoFactor !== null) {
-      const lo = style.bpm[0] * 0.9;
-      const hi = Math.max(style.bpm[1] * 1.1, FOLLOW_TOP_BPM);
-      targetBpm = Math.round(lo + this.tempoFactor * (hi - lo));
-    }
-    if (this.tempoOv !== null) this.curBpm = this.tempoOv;
-    else if (this.curBpm === null) this.curBpm = targetBpm;
-    else this.curBpm += Math.max(-MAX_BPM_STEP, Math.min(MAX_BPM_STEP, targetBpm - this.curBpm));
-
-    const cb = style.chordBars;
-    const j = s.barInSection;
-    const prog = s.prog;
-    const progLen = 4 * cb;
-    const jj = j % progLen;
-    const chordIdx = Math.floor(jj / cb);
-    const posInChord = jj % cb;
-    const repeat = Math.floor(j / progLen);
-    const nextChordIdx = (chordIdx + (posInChord === cb - 1 ? 1 : 0)) % 4;
-    const degree = prog[chordIdx];
-    const nextDegree = prog[nextChordIdx];
-    const lastBar = j === s.sectionBars - 1;
-
-    const rr = stream(s.secSeed, 200 + j);
-    const opts = {
-      seventh: stream(s.secSeed, 300 + chordIdx).chance(style.sevenths),
-      sus: null,
-    };
-    const susR = stream(s.secSeed, 400 + chordIdx);
-    if (susR.chance(style.sus)) opts.sus = susR.chance(0.5) ? '2' : '4';
-    const tones = chordTones(s.scale, degree, opts);
-
-    const steps = [];
-    for (let i = 0; i < STEPS_PER_BAR; i++) steps.push([]);
-    const L = s.layers;
-    const hum = s.hum;
-
-    // ---- pad
-    if (L.pad && posInChord === 0) {
-      const notes = tones.map((t) => fold(48 + s.pc + t, 55)).sort((a, b) => a - b);
-      if (!L.bass) notes.unshift(fold(48 + s.pc + tones[0], 43));
-      for (const n of notes) {
-        steps[0].push({ voice: 'pad', note: n, vel: 0.5 + hum.float() * 0.08, len: STEPS_PER_BAR * cb });
-      }
-    }
-
-    // ---- bass
-    if (L.bass) this._planBass(steps, s, tones, degree, nextDegree, posInChord, rr, hum);
-
-    // ---- arp
-    if (L.arp) this._planArp(steps, s, tones, j, hum);
-
-    // ---- lead
-    if (L.lead || this.leadOv) this._planLead(steps, s, tones, j, jj, repeat, progLen, cb, lastBar);
-
-    // ---- drums
-    if (L.drums && style.drums) this._planDrums(steps, s, j, lastBar, rr, hum);
-
-    const t = s.sectionBars > 1 ? j / (s.sectionBars - 1) : 0;
-    const plan = {
-      steps,
-      bpm: this.curBpm,
-      swing: style.swing,
-      swing8: style.swing8 || 0,
-      fx: style.fx,
-      patches: style.patches,
-      bright: s.bright * (0.78 + 0.22 * t),
-      bar: this.barCount,
-      section: s.sectionIdx,
-      chordDegree: degree,
-      trim: style.trim || 1,
-      duck: L.drums && style.drums ? 0.4 : 0,
-      layers: { ...L, lead: !!(L.lead || this.leadOv) },
-    };
-    s.barInSection++;
-    this.barCount++;
-    return plan;
-  }
-
-  _planBass(steps, s, tones, degree, nextDegree, posInChord, rr, hum) {
-    const style = s.style;
-    const cb = style.chordBars;
-    const root = fold(36 + s.pc + s.scale[degree], 36);
-    const mode = style.bass.mode;
-    const push = (st, note, vel, len) =>
-      steps[st].push({ voice: 'bass', note, vel: vel * (0.92 + hum.float() * 0.08), len });
-    if (mode === 'sub' || mode === 'drone') {
-      if (posInChord === 0) push(0, root, 0.8, STEPS_PER_BAR * cb - 0.5);
-    } else if (mode === 'pulse') {
-      const fifth = rr.chance(0.3);
-      for (let st = 0; st < 16; st += 2) {
-        const n = st === 14 && fifth ? root + 7 : root;
-        push(st, n, st % 8 === 0 ? 0.85 : 0.65, 1.7);
-      }
-    } else if (mode === 'offbeat') {
-      for (let st = 2; st < 16; st += 4) push(st, root, 0.8, 1.6);
-    } else if (mode === 'octave') {
-      for (let st = 0; st < 16; st += 2) push(st, st % 4 === 2 ? root + 12 : root, 0.7, 1.2);
-    } else if (mode === 'acid') {
-      // 16th-note acid line. The kick owns the beat, so the bass plays the gaps;
-      // the section's random pattern picks which gaps, which note and which
-      // steps are accented (and open the filter wider).
-      const third = fold(36 + s.pc + tones[1], 36);
-      const fifth = fold(36 + s.pc + tones[2], 36);
-      const pick = [root, root, root + 12, third, fifth, root + 12];
-      for (let st = 0; st < 16; st++) {
-        if (st % 4 === 0 || !s.seqGate[st]) continue;
-        const k = s.seqPat[(st * 5 + 3) & 15];
-        push(st, pick[k], k >= 4 ? 0.95 : 0.66, 1.3);
-      }
-    } else if (mode === 'walk') {
-      const nextRoot = fold(36 + s.pc + s.scale[nextDegree], 36);
-      const third = root + (s.scale[(degree + 2) % 7] - s.scale[degree] + 12) % 12;
-      const fifth = root + 7;
-      const approach = nextRoot + (rr.chance(0.5) ? -1 : 1);
-      const seq = [root, rr.chance(0.5) ? third : fifth, fifth, approach];
-      for (let i = 0; i < 4; i++) push(i * 4, seq[i], i === 0 ? 0.85 : 0.65, 3.6);
-    }
-  }
-
-  _planArp(steps, s, tones, j, hum) {
-    const a = s.style.arp;
-    const rate = a.rate;
-    const pool = [];
-    const base = tones.map((t) => fold(48 + s.pc + t, 60)).sort((x, y) => x - y);
-    for (let o = 0; o < a.octaves; o++) for (const n of base) pool.push(n + 12 * o);
-    const N = pool.length;
-    const ar = stream(s.secSeed, 500 + j);
-    for (let st = 0, k = 0; st < 16; st += rate, k++) {
-      // Draw unconditionally so patterns stay in sync when options change.
-      const pick = ar.below(N);
-      const skip = ar.float();
-      let idx;
-      let play = true;
-      switch (a.mode) {
-        case 'up':
-          idx = k % N;
-          break;
-        case 'down':
-          idx = N - 1 - (k % N);
-          break;
-        case 'updown': {
-          const period = Math.max(1, 2 * N - 2);
-          const m = k % period;
-          idx = m < N ? m : period - m;
-          break;
-        }
-        case 'seq':
-          idx = s.seqPat[st] % N;
-          play = s.seqGate[st] === 1;
-          break;
-        default:
-          idx = pick;
-          play = skip > 0.3;
-      }
-      if (!play) continue;
-      const accent = st % 4 === 0 ? 1.12 : 0.92;
-      steps[st].push({
-        voice: 'arp',
-        note: pool[idx],
-        vel: a.vel * accent * (0.9 + hum.float() * 0.1),
-        len: rate * a.gate,
-      });
-    }
-  }
-
-  _planLead(steps, s, tones, j, jj, repeat, progLen, cb, lastBar) {
-    const style = s.style;
-    const key = repeat === 1 && jj === progLen - 1 && s.answer ? 99 : jj % (2 * cb);
-    const r = stream(s.motifSeed, 31 * key + 7);
-    let dens = Math.min(0.9, style.lead.density * s.densMul);
-    if (this.leadOv) dens = Math.max(dens, 0.26);
-    const mel = s.melScale;
-    const origin = 48 + s.pc;
-    const lo = this.leadOv ? this.leadOv.lo : style.lead.lo || 62;
-    const hi = this.leadOv ? this.leadOv.hi : style.lead.hi || 88;
-
-    // Chord tones across the lead register, as midi notes.
-    const ctMidi = [];
-    for (let o = -2; o <= 4; o++) for (const t of tones) ctMidi.push(origin + t + 12 * o);
-    const nearestChordTone = (m) => {
-      let best = ctMidi[0];
-      let bd = 1e9;
-      for (const c of ctMidi) {
-        const d = Math.abs(c - m);
-        if (d < bd) {
-          bd = d;
-          best = c;
-        }
-      }
-      return best;
-    };
-
-    const hits = [];
-    let last = -99;
-    let idx = nearestIdx(mel, s.leadMidi - origin);
-    const deltas = [-3, -2, -2, -1, -1, -1, 0, 1, 1, 1, 2, 2, 3];
-    for (let st = 0; st < 16; st++) {
-      const chance = r.float();
-      const delta = deltas[r.below(deltas.length)];
-      const snap = r.float();
-      const velJ = r.float();
-      const p = Math.min(1, dens * 3.2 * METER[st]);
-      if (chance < p && st - last >= style.lead.minGap) {
-        let m = origin + scaleNote(mel, idx + delta);
-        idx += delta;
-        if (hits.length === 0 || (st % 4 === 0 && snap < 0.65)) {
-          m = nearestChordTone(m);
-          idx = nearestIdx(mel, m - origin);
-        }
-        while (m > hi) {
-          idx -= mel.length;
-          m -= 12;
-        }
-        while (m < lo) {
-          idx += mel.length;
-          m += 12;
-        }
-        hits.push({ st, m, vel: style.lead.vel * (METER[st] > 0.5 ? 1 : 0.85) * (0.88 + velJ * 0.12) });
-        last = st;
-      }
-    }
-    for (let i = 0; i < hits.length; i++) {
-      const h = hits[i];
-      const next = i + 1 < hits.length ? hits[i + 1].st : 16;
-      const len = Math.max(1, Math.min(next - h.st, 8) * 0.92);
-      steps[h.st].push({ voice: 'lead', note: h.m, vel: h.vel, len });
-      s.leadMidi = h.m;
-    }
-  }
-
-  _planDrums(steps, s, j, lastBar, rr, hum) {
-    const d = s.style.drums;
-    const lvl = d.level;
-    const g = s.groove;
-    const add = (st, voice, note, vel, len) =>
-      steps[st].push({ voice, note, vel: Math.min(1, vel * lvl * (0.93 + hum.float() * 0.07)), len: len || 1 });
-
-    for (const st of g.kick) add(st, 'kick', 36, [0, 8].includes(st) || st % 4 === 0 ? 1.0 : 0.6);
-    for (const st of g.snare) {
-      if (lastBar && st === 12) continue;
-      add(st, 'snare', 38, 0.85);
-    }
-    const hat = d.hat;
-    if (hat === 'eighth') {
-      for (let st = 0; st < 16; st += 2) add(st, 'hat', 42, st % 4 === 2 ? 0.55 : 0.35);
-    } else if (hat === 'offbeat') {
-      for (let st = 2; st < 16; st += 4) add(st, 'hat', 46, 0.5, 2);
-    } else if (hat === 'sixteenth') {
-      // Closed 16ths with an open hat on every off-beat eighth.
-      for (let st = 0; st < 16; st++) {
-        if (st % 4 === 2) add(st, 'hat', 46, 0.5, 2);
-        else add(st, 'hat', 42, st % 2 ? 0.22 : 0.34);
-      }
-    } else if (hat === 'sparse') {
-      for (let st = 0; st < 16; st += 2) if (rr.chance(0.35)) add(st, 'hat', 42, 0.3);
-    }
-    if (lastBar) {
-      // Fill: snare roll, or toms when the style has no snare.
-      if (d.snare && s.style.id !== 'epic') {
-        for (let k = 0; k < 4; k++) add(12 + k, 'snare', 38, 0.5 + k * 0.14);
-      } else {
-        const toms = [50, 47, 45, 43];
-        for (let k = 0; k < 4; k++) add(12 + k, 'tom', toms[k], 0.7 + k * 0.08, 2);
-      }
-    }
-  }
-}
-
-
-/* ---- engine/patches.js ---- */
-// Patch table. Times in seconds, frequencies in Hz, detune in cents.
-//   wave   : 'saw' | 'pulse' | 'sine' | 'tri' | 'fm'
-//   osc2   : optional second oscillator (same wave) detuned by `detune` cents
-//   sub    : level of a sine one octave below
-//   cut    : base filter cutoff (Hz, scaled by the bright macro)
-//   fenv   : added cutoff (Hz) at envelope peak, decaying over fdec seconds
-//   key    : how much the cutoff follows pitch (0..1)
-//   res    : filter resonance 0..0.95
-//   fm*    : ratio / index / decay for the 'fm' wave
-//   vib    : vibrato depth in cents, vibRate in Hz
-//   pwm    : pulse-width LFO depth, pwmRate in Hz
-//   rev/dly: effect sends, pan: stereo spread (0 = centre)
-
-const PATCHES = {
-  padSoft: { wave: 'saw', detune: 9, osc2: true, sub: 0, cut: 1300, fenv: 0, fdec: 1, key: 0.3, res: 0.1,
-    a: 0.9, d: 1.5, s: 0.8, r: 2.5, gain: 0.2, rev: 0.6, dly: 0.12, pan: 0.5, pwm: 0 },
-  padDark: { wave: 'saw', detune: 14, osc2: true, sub: 0.3, cut: 620, fenv: 300, fdec: 2, key: 0.2, res: 0.2,
-    a: 1.6, d: 2, s: 0.7, r: 3.5, gain: 0.22, rev: 0.6, dly: 0.1, pan: 0.6, pwm: 0 },
-  padSaw: { wave: 'saw', detune: 12, osc2: true, sub: 0, cut: 2400, fenv: 1500, fdec: 0.9, key: 0.4, res: 0.12,
-    a: 0.25, d: 1, s: 0.75, r: 1.2, gain: 0.17, rev: 0.35, dly: 0.1, pan: 0.5, pwm: 0 },
-  padFM: { wave: 'fm', fmRatio: 1, fmIndex: 1.6, fmDecay: 0.9, detune: 0, osc2: false, sub: 0, cut: 6000, fenv: 0,
-    fdec: 1, key: 0, res: 0, a: 0.01, d: 1.8, s: 0.3, r: 0.8, gain: 0.22, rev: 0.35, dly: 0.2, pan: 0.3, pwm: 0 },
-  padPulse: { wave: 'pulse', pw: 0.3, detune: 7, osc2: true, sub: 0, cut: 3500, fenv: 0, fdec: 1, key: 0.3, res: 0.05,
-    a: 0.02, d: 0.3, s: 0.5, r: 0.15, gain: 0.1, rev: 0.1, dly: 0.1, pan: 0.4, pwm: 0.12, pwmRate: 0.6 },
-
-  bassSub: { wave: 'sine', detune: 0, osc2: false, sub: 0.35, cut: 500, fenv: 0, fdec: 1, key: 0, res: 0,
-    a: 0.02, d: 0.3, s: 0.9, r: 0.4, gain: 0.45, rev: 0, dly: 0, pan: 0, pwm: 0 },
-  bassSaw: { wave: 'saw', detune: 0, osc2: false, sub: 0.5, cut: 420, fenv: 1300, fdec: 0.18, key: 0.2, res: 0.3,
-    a: 0.004, d: 0.2, s: 0.55, r: 0.12, gain: 0.3, rev: 0, dly: 0, pan: 0, pwm: 0 },
-  bassPulse: { wave: 'pulse', pw: 0.4, detune: 0, osc2: false, sub: 0.4, cut: 600, fenv: 900, fdec: 0.1, key: 0.2,
-    res: 0.35, a: 0.003, d: 0.15, s: 0.4, r: 0.08, gain: 0.3, rev: 0, dly: 0, pan: 0, pwm: 0 },
-
-  arpPluck: { wave: 'saw', detune: 8, osc2: true, sub: 0, cut: 1800, fenv: 3000, fdec: 0.12, key: 0.5, res: 0.15,
-    a: 0.003, d: 0.25, s: 0, r: 0.3, gain: 0.17, rev: 0.3, dly: 0.35, pan: 0.6, pwm: 0 },
-  arpBell: { wave: 'fm', fmRatio: 3.5, fmIndex: 2, fmDecay: 0.7, detune: 0, osc2: false, sub: 0, cut: 9000, fenv: 0,
-    fdec: 1, key: 0, res: 0, a: 0.004, d: 1.6, s: 0, r: 1.2, gain: 0.17, rev: 0.5, dly: 0.4, pan: 0.7, pwm: 0 },
-  arpSaw: { wave: 'saw', detune: 0, osc2: false, sub: 0, cut: 1400, fenv: 3500, fdec: 0.1, key: 0.5, res: 0.3,
-    a: 0.002, d: 0.18, s: 0.2, r: 0.15, gain: 0.14, rev: 0.2, dly: 0.3, pan: 0.5, pwm: 0 },
-  arpPulse: { wave: 'pulse', pw: 0.25, detune: 0, osc2: false, sub: 0, cut: 3500, fenv: 1500, fdec: 0.08, key: 0.5,
-    res: 0.1, a: 0.002, d: 0.12, s: 0.25, r: 0.08, gain: 0.13, rev: 0.12, dly: 0.25, pan: 0.5, pwm: 0.1, pwmRate: 2 },
-
-  leadBell: { wave: 'fm', fmRatio: 2, fmIndex: 3, fmDecay: 1.0, detune: 0, osc2: false, sub: 0, cut: 9000, fenv: 0,
-    fdec: 1, key: 0, res: 0, a: 0.005, d: 2.2, s: 0, r: 1.5, gain: 0.2, rev: 0.55, dly: 0.45, pan: 0.3, pwm: 0 },
-  leadSaw: { wave: 'saw', detune: 7, osc2: true, sub: 0, cut: 2600, fenv: 1200, fdec: 0.3, key: 0.6, res: 0.2,
-    a: 0.02, d: 0.3, s: 0.7, r: 0.35, gain: 0.15, rev: 0.3, dly: 0.35, pan: 0.2, pwm: 0, vib: 12, vibRate: 5.2 },
-  leadPulse: { wave: 'pulse', pw: 0.5, detune: 0, osc2: false, sub: 0, cut: 5000, fenv: 0, fdec: 1, key: 0.4, res: 0.05,
-    a: 0.005, d: 0.1, s: 0.6, r: 0.1, gain: 0.12, rev: 0.12, dly: 0.15, pan: 0.2, pwm: 0.15, pwmRate: 3.1, vib: 8, vibRate: 5.8 },
-  leadFM: { wave: 'fm', fmRatio: 2, fmIndex: 2.2, fmDecay: 1.2, detune: 0, osc2: false, sub: 0, cut: 8000, fenv: 0,
-    fdec: 1, key: 0, res: 0, a: 0.01, d: 1.0, s: 0.2, r: 0.6, gain: 0.18, rev: 0.45, dly: 0.3, pan: 0.2, pwm: 0 },
-
-  // ---- Acoustic-style instruments -------------------------------------
-  // formants: [freq Hz, Q, gain] band-pass bank; dry: unfiltered mix level;
-  // breath: noise level; scoop: attack pitch bend in cents; vibDelay: seconds
-  // before vibrato fades in; fRise: cutoff swell time (brass).
-  leadSax: { wave: 'reed', detune: 0, osc2: false, sub: 0, cut: 5200, fenv: 1800, fdec: 0.25, key: 0.3, res: 0.05,
-    formants: [[520, 2.2, 1.0], [1500, 3, 0.55], [2700, 4, 0.25]], dry: 0.4, breath: 0.07,
-    a: 0.045, d: 0.3, s: 0.85, r: 0.14, gain: 0.36, rev: 0.3, dly: 0.2, pan: 0.15, pwm: 0,
-    vib: 22, vibRate: 5.3, vibDelay: 0.35, scoop: 40, scoopDec: 0.07 },
-  leadFlute: { wave: 'tri', detune: 0, osc2: false, sub: 0, cut: 3600, fenv: 600, fdec: 0.15, key: 0.5, res: 0,
-    formants: [[900, 2, 0.25]], dry: 0.9, breath: 0.2,
-    a: 0.06, d: 0.2, s: 0.9, r: 0.15, gain: 0.26, rev: 0.4, dly: 0.25, pan: 0.2, pwm: 0,
-    vib: 16, vibRate: 5.0, vibDelay: 0.4 },
-  leadClarinet: { wave: 'pulse', pw: 0.5, detune: 0, osc2: false, sub: 0, cut: 3200, fenv: 800, fdec: 0.2, key: 0.3, res: 0,
-    formants: [[600, 2.5, 0.8], [1800, 3, 0.3]], dry: 0.5, breath: 0.04,
-    a: 0.03, d: 0.25, s: 0.9, r: 0.1, gain: 0.19, rev: 0.3, dly: 0.2, pan: 0.15, pwm: 0,
-    vib: 10, vibRate: 5.2, vibDelay: 0.5 },
-  leadTrumpet: { wave: 'saw', detune: 0, osc2: false, sub: 0, cut: 900, fenv: 4200, fdec: 1, fRise: 0.05, key: 0.5, res: 0.05,
-    formants: [[1100, 3, 0.8], [2400, 3.5, 0.4]], dry: 0.5, breath: 0.02,
-    a: 0.03, d: 0.2, s: 0.8, r: 0.1, gain: 0.17, rev: 0.3, dly: 0.2, pan: 0.15, pwm: 0,
-    vib: 9, vibRate: 5.6, vibDelay: 0.4, scoop: 30, scoopDec: 0.05 },
-  leadVibes: { wave: 'fm', fmRatio: 3, fmIndex: 0.9, fmDecay: 0.45, detune: 0, osc2: false, sub: 0, cut: 9000, fenv: 0,
-    fdec: 1, key: 0, res: 0, a: 0.003, d: 1.8, s: 0, r: 1.2, gain: 0.2, rev: 0.4, dly: 0.3, pan: 0.3, pwm: 0 },
-  leadOrgan: { wave: 'organ', detune: 0, osc2: false, sub: 0, cut: 6000, fenv: 0, fdec: 1, key: 0, res: 0,
-    a: 0.01, d: 0.05, s: 0.9, r: 0.08, gain: 0.16, rev: 0.25, dly: 0.15, pan: 0.2, pwm: 0,
-    vib: 6, vibRate: 6.2, vibDelay: 0.1 },
-  leadChoir: { wave: 'saw', detune: 10, osc2: true, sub: 0, cut: 4500, fenv: 0, fdec: 1, key: 0.2, res: 0,
-    formants: [[800, 5, 1.0], [1150, 6, 0.6], [2900, 8, 0.25]], dry: 0.15, breath: 0.03,
-    a: 0.25, d: 0.5, s: 0.8, r: 0.5, gain: 0.28, rev: 0.5, dly: 0.2, pan: 0.3, pwm: 0,
-    vib: 10, vibRate: 5.0, vibDelay: 0.3 },
-
-  padStrings: { wave: 'saw', detune: 16, osc2: true, sub: 0, cut: 2800, fenv: 0, fdec: 1, key: 0.4, res: 0.05,
-    a: 0.4, d: 1.5, s: 0.85, r: 0.7, gain: 0.17, rev: 0.4, dly: 0.08, pan: 0.6, pwm: 0,
-    vib: 5, vibRate: 5.1, vibDelay: 0.5 },
-  padChoir: { wave: 'saw', detune: 10, osc2: true, sub: 0, cut: 4500, fenv: 0, fdec: 1, key: 0.2, res: 0,
-    formants: [[700, 5, 1.0], [1100, 6, 0.6], [2800, 8, 0.25]], dry: 0.12, breath: 0.02,
-    a: 0.6, d: 1.5, s: 0.8, r: 1.4, gain: 0.26, rev: 0.6, dly: 0.1, pan: 0.6, pwm: 0,
-    vib: 9, vibRate: 5.0, vibDelay: 0.5 },
-  bassUpright: { wave: 'saw', detune: 0, osc2: false, sub: 0.45, cut: 330, fenv: 700, fdec: 0.1, key: 0.3, res: 0.1,
-    a: 0.006, d: 0.55, s: 0.12, r: 0.2, gain: 0.38, rev: 0, dly: 0, pan: 0, pwm: 0 },
-  // Techno: resonant 303-style acid bass (cutoff snaps up and falls) and a short detuned stab.
-  bassAcid: { wave: 'saw', detune: 0, osc2: false, sub: 0.3, cut: 280, fenv: 2300, fdec: 0.13, key: 0.2, res: 0.72,
-    a: 0.003, d: 0.14, s: 0.3, r: 0.05, gain: 0.27, rev: 0, dly: 0.05, pan: 0, pwm: 0 },
-  arpStab: { wave: 'saw', detune: 10, osc2: true, sub: 0, cut: 900, fenv: 2800, fdec: 0.09, key: 0.4, res: 0.25,
-    a: 0.002, d: 0.13, s: 0, r: 0.1, gain: 0.16, rev: 0.3, dly: 0.4, pan: 0.5, pwm: 0 },
-  arpVibes: { wave: 'fm', fmRatio: 3, fmIndex: 0.8, fmDecay: 0.5, detune: 0, osc2: false, sub: 0, cut: 9000, fenv: 0,
-    fdec: 1, key: 0, res: 0, a: 0.003, d: 1.5, s: 0, r: 1, gain: 0.15, rev: 0.4, dly: 0.25, pan: 0.6, pwm: 0 },
-};
-
-// Instruments the user can pick for the lead line (null = the style decides).
-const LEAD_INSTRUMENTS = [
-  { id: 'auto', name: 'Auto', patch: null },
-  { id: 'sax', name: 'Saxophone', patch: 'leadSax', lo: 55, hi: 81 },
-  { id: 'flute', name: 'Flute', patch: 'leadFlute', lo: 67, hi: 96 },
-  { id: 'clarinet', name: 'Clarinet', patch: 'leadClarinet', lo: 55, hi: 91 },
-  { id: 'trumpet', name: 'Trumpet', patch: 'leadTrumpet', lo: 60, hi: 84 },
-  { id: 'vibes', name: 'Vibraphone', patch: 'leadVibes', lo: 60, hi: 96 },
-  { id: 'organ', name: 'Organ', patch: 'leadOrgan', lo: 55, hi: 88 },
-  { id: 'choir', name: 'Choir', patch: 'leadChoir', lo: 55, hi: 79 },
-];
-
-
 /* ---- engine/voices.js ---- */
 // Realtime voices: a subtractive/FM synth voice and four drum voices.
 // No allocation after construction. All state is plain numbers.
@@ -1623,6 +1024,823 @@ class DrumVoice {
 }
 
 
+/* ---- engine/instrument.js ---- */
+// Procedural lead instrument: a complete synth patch (see patches.js for the
+// fields) generated from a seed, so every place gets its own instrument.
+//
+// An instrument is a combination of independent choices: oscillator (saw,
+// pulse, triangle, FM, reed, organ), envelope (plucked or sustained), filter
+// movement, vibrato, vowel-like formants, breath, pitch scoop, effect sends
+// and register. The choices are correlated just enough to keep the result
+// musical. Pure function of the Rng: same seed, same instrument.
+
+
+const fr = (r, lo, hi) => lo + r.float() * (hi - lo);
+
+// Loudness matching. Random parameters change the level a lot (a plucked FM
+// bell versus a sustained organ), so each new instrument is rendered briefly
+// at a low sample rate and its gain set so it sits at the level of the
+// built-in leads. About 1 ms of work, once per place change.
+const PROBE_SR = 16000;
+const PROBE_N = 5600; // 0.35 s
+const PROBE_GATE = 3200; // note held for 0.2 s
+const TARGET_DB = -21.2; // measured on the built-in leads with probeDb()
+let probe = null;
+let probePeak = 0; // peak of the last probeDb() call
+
+// Mean power (dB) of one note of a patch, as heard through the probe.
+function probeDb(patch, note) {
+  if (!probe) {
+    probe = {
+      v: new SynthVoice(PROBE_SR),
+      L: new Float32Array(PROBE_N),
+      R: new Float32Array(PROBE_N),
+      REV: new Float32Array(PROBE_N),
+      DLY: new Float32Array(PROBE_N),
+    };
+  }
+  const { v, L, R, REV, DLY } = probe;
+  L.fill(0);
+  R.fill(0);
+  REV.fill(0);
+  DLY.fill(0);
+  v.start(note, 0.7, PROBE_GATE, patch, 0.5, 0, 0.3);
+  for (let o = 0; o < PROBE_N; o += 128) v.render(Math.min(128, PROBE_N - o), o, L, R, REV, DLY);
+  let sum = 0;
+  let pk = 0;
+  for (let i = 0; i < PROBE_N; i++) {
+    const x = L[i] + R[i];
+    sum += x * x;
+    if (x > pk) pk = x;
+    else if (-x > pk) pk = -x;
+  }
+  probePeak = pk;
+  return 10 * Math.log10(sum / PROBE_N + 1e-12);
+}
+
+function makeInstrument(r) {
+  const wave = r.pick(['saw', 'saw', 'pulse', 'tri', 'fm', 'fm', 'reed', 'organ']);
+  const plucked = r.chance(0.4);
+  const p = { wave, detune: 0, osc2: false, sub: 0, res: 0, key: fr(r, 0.2, 0.7), pwm: 0 };
+
+  // Oscillator.
+  if (wave === 'saw' || wave === 'pulse') {
+    if (r.chance(0.6)) {
+      p.osc2 = true;
+      p.detune = fr(r, 4, 18);
+    }
+  }
+  if (wave === 'pulse') {
+    p.pw = fr(r, 0.15, 0.5);
+    if (r.chance(0.6)) {
+      p.pwm = fr(r, 0.05, 0.22);
+      p.pwmRate = fr(r, 0.3, 3.5);
+    }
+  }
+  if (wave === 'fm') {
+    p.fmRatio = r.pick([0.5, 1, 1, 2, 2, 3, 3.5, 4, 5]);
+    p.fmIndex = fr(r, 0.3, 3);
+    p.fmDecay = plucked ? fr(r, 0.12, 0.5) : fr(r, 0.6, 2);
+  }
+  if (r.chance(0.25)) p.sub = fr(r, 0.15, 0.45);
+
+  // Filter.
+  p.cut = fr(r, 1200, 6500);
+  p.fenv = r.chance(0.7) ? fr(r, 500, 4000) : 0;
+  p.fdec = fr(r, 0.06, 0.6);
+  p.res = r.chance(0.5) ? fr(r, 0, 0.45) : 0.05;
+  if (wave === 'saw' && !plucked && r.chance(0.3)) {
+    // Brass-like: the filter opens after the attack.
+    p.cut = fr(r, 700, 1200);
+    p.fenv = fr(r, 2500, 4500);
+    p.fRise = fr(r, 0.04, 0.12);
+    p.fdec = 1;
+  }
+
+  // Envelope.
+  if (plucked) {
+    p.a = fr(r, 0.002, 0.012);
+    p.d = fr(r, 0.12, 0.6);
+    p.s = fr(r, 0, 0.15);
+    p.r = fr(r, 0.12, 0.5);
+  } else {
+    p.a = fr(r, 0.01, 0.18);
+    p.d = fr(r, 0.1, 0.4);
+    p.s = fr(r, 0.6, 0.95);
+    p.r = fr(r, 0.08, 0.5);
+  }
+
+  // Vibrato.
+  if (r.chance(plucked ? 0.25 : 0.75)) {
+    p.vib = fr(r, 5, 24);
+    p.vibRate = fr(r, 4.6, 6.4);
+    p.vibDelay = fr(r, 0.1, 0.5);
+  }
+
+  // Vowel-like formants and breath (not for FM or organ, which have their own timbre).
+  if (wave !== 'fm' && wave !== 'organ' && r.chance(0.45)) {
+    const f1 = fr(r, 380, 900);
+    const f2 = f1 * fr(r, 1.8, 3.2);
+    p.formants = [
+      [f1, fr(r, 2, 5), 1],
+      [f2, fr(r, 2.5, 5), fr(r, 0.3, 0.6)],
+      [f2 * fr(r, 1.3, 1.9), fr(r, 3, 6), fr(r, 0.1, 0.3)],
+    ];
+    p.dry = fr(r, 0.15, 0.55);
+  }
+  p.breath = r.chance(0.5) ? fr(r, 0.01, 0.12) : 0;
+  if (!plucked && r.chance(0.3)) {
+    p.scoop = fr(r, 15, 60);
+    p.scoopDec = fr(r, 0.04, 0.1);
+  }
+
+  // Space and register.
+  p.rev = fr(r, 0.2, 0.55);
+  p.dly = fr(r, 0.1, 0.45);
+  p.pan = fr(r, 0, 0.4);
+  const reg = r.pick([[48, 72], [55, 79], [60, 84], [67, 93]]);
+  p.lo = reg[0];
+  p.hi = reg[1];
+
+  // Gain: render two notes of the register and scale to the target level.
+  p.gain = 0.2;
+  const mid = (p.lo + p.hi) >> 1;
+  const db1 = probeDb(p, mid);
+  const pk1 = probePeak;
+  const db2 = probeDb(p, mid - 7);
+  const peak = Math.max(pk1, probePeak, 1e-6);
+  let g = 0.2 * Math.pow(10, (TARGET_DB - 0.5 * (db1 + db2)) / 20);
+  g = Math.min(g, (0.2 * 0.5) / peak); // a single note never peaks above ~0.5
+  p.gain = Math.max(0.04, Math.min(0.9, g));
+  p.name = describe(p, plucked);
+  return p;
+}
+
+// A small variation of an instrument for each song section (the same
+// instrument, slightly brighter or duller, a different amount of vibrato).
+function morphInstrument(base, r) {
+  const m = { ...base };
+  m.cut = base.cut * fr(r, 0.75, 1.3);
+  if (base.fmIndex !== undefined) m.fmIndex = base.fmIndex * fr(r, 0.8, 1.25);
+  if (base.vib !== undefined) m.vib = base.vib * fr(r, 0.7, 1.3);
+  return m;
+}
+
+// Short human-readable description, e.g. "plucked FM bell, airy".
+function describe(p, plucked) {
+  let body;
+  switch (p.wave) {
+    case 'fm':
+      body = p.fmRatio >= 3.4 ? 'FM bell' : 'FM tone';
+      break;
+    case 'saw':
+      body = p.fRise ? 'brass' : 'saw';
+      break;
+    case 'pulse':
+      body = p.pwm ? 'pulse (moving)' : 'pulse';
+      break;
+    case 'tri':
+      body = 'flute-like tone';
+      break;
+    case 'reed':
+      body = 'reed';
+      break;
+    default:
+      body = 'organ';
+  }
+  const shape = plucked ? 'plucked' : p.a > 0.08 ? 'swelling' : 'sustained';
+  const extra = [];
+  if (p.formants) extra.push('vocal');
+  if (p.breath > 0.06) extra.push('airy');
+  if (p.scoop) extra.push('scooped');
+  if (p.vib) extra.push('vibrato');
+  if (p.osc2 && p.detune > 10) extra.push('wide');
+  return `${shape} ${body}` + (extra.length ? ', ' + extra.slice(0, 2).join(', ') : '');
+}
+
+
+/* ---- engine/composer.js ---- */
+// Procedural composer. Pure function of (seed, bar count): no audio, no
+// floating-point state that depends on the platform beyond IEEE basics, and
+// every random draw comes from a seeded stream, so the same seed always
+// produces the same music.
+//
+// nextBar() returns a plan for one bar (16 sixteenth-note steps):
+//   steps[s] = array of note events { voice, note, vel, len }
+// voices: pad, bass, arp, lead, kick, snare, hat, tom
+
+
+const STEPS_PER_BAR = 16;
+const MAX_BPM_STEP = 12;
+// At full speed (100 km/h) every style reaches at least this tempo, so a slow
+// style like Abyss does not top out at 70 bpm.
+const FOLLOW_TOP_BPM = 160;
+const BPM_MIN = 40;
+const BPM_MAX = 220;
+const METER = [1, 0.15, 0.3, 0.15, 0.6, 0.15, 0.3, 0.15, 0.8, 0.15, 0.3, 0.15, 0.6, 0.15, 0.3, 0.15];
+const LAYERS = ['pad', 'bass', 'arp', 'lead', 'drums'];
+
+class Composer {
+  constructor() {
+    this.pending = null;
+    this.s = null;
+    this.barCount = 0;
+    this.leadOv = null;
+    this.leadProc = false;
+    this.tempoFactor = null;
+    this.tempoOv = null;
+    this.curBpm = null;
+  }
+
+  // seed: { style: -1 (auto) | index, coarse: u32, fine: u32 }
+  setSeed(seed) {
+    this.pending = { style: seed.style, coarse: seed.coarse >>> 0, fine: seed.fine >>> 0 };
+  }
+
+  hasPending() {
+    return this.pending !== null;
+  }
+
+  // Tempo follows movement: factor 0..1 maps across the style's tempo range
+  // (a little beyond it at both ends). null = use the tempo from the seed.
+  // Applied gradually at bar lines (see nextBar).
+  setTempoFactor(f) {
+    this.tempoFactor = f === null || f === undefined ? null : Math.max(0, Math.min(1, f));
+  }
+
+  // Manual tempo (BPM slider): wins over movement and the seed, and applies at
+  // once rather than being slewed. null returns to movement/seed tempo.
+  setTempoOverride(bpm) {
+    if (bpm === null || bpm === undefined || !Number.isFinite(bpm)) {
+      this.tempoOv = null;
+      return;
+    }
+    this.tempoOv = Math.max(BPM_MIN, Math.min(BPM_MAX, Math.round(bpm)));
+    this.curBpm = this.tempoOv;
+  }
+
+  // Force the lead line on (the user picked a lead instrument) and keep it in
+  // that instrument's range. ov = { lo, hi } midi notes, or null for the
+  // style's own arrangement.
+  setLeadOverride(ov) {
+    this.leadOv = ov ? { lo: ov.lo, hi: ov.hi } : null;
+  }
+
+  // Procedural lead: every place invents its own instrument (see instrument.js)
+  // and the melody stays in that instrument's register. Replaces a lead override.
+  setLeadProcedural(on) {
+    this.leadProc = !!on;
+  }
+
+  info() {
+    const s = this.s;
+    if (!s) return null;
+    return {
+      leadName: this.leadProc && s.instV ? s.instV.name : null,
+      style: s.styleIdx,
+      styleName: s.style.name,
+      key: NOTE_NAMES[s.pc],
+      scale: s.scaleName,
+      bpm: this.curBpm === null ? s.bpm : this.curBpm,
+    };
+  }
+
+  // ---------------------------------------------------------------- latching
+
+  _latch(seed) {
+    const prev = this.s;
+    const styleIdx =
+      seed.style >= 0 && seed.style < STYLES.length
+        ? seed.style
+        : mix32(seed.coarse ^ 0x57) % STYLES.length;
+    const style = STYLES[styleIdx];
+    const full = !prev || prev.styleIdx !== styleIdx || prev.coarse !== seed.coarse;
+    if (full) this.curBpm = null; // new place/style: take its tempo straight away
+
+    const s = {
+      styleIdx,
+      style,
+      coarse: seed.coarse,
+      fine: seed.fine,
+      sectionIdx: 0,
+      barInSection: 0,
+      sectionBars: 0,
+      prog: [0, 0, 0, 0],
+      motifSeed: 1,
+      layers: {},
+      bright: 0.5,
+      densMul: 1,
+      groove: null,
+      seqPat: [],
+      seqGate: [],
+      answer: false,
+      leadMidi: 74,
+      hum: stream(seed.fine, 77),
+    };
+
+    // Key, mode and tempo come from the coarse cell (stable over ~10 km).
+    const kr = stream(seed.coarse, 11);
+    s.pc = kr.below(12);
+    s.scaleName = style.scales[kr.below(style.scales.length)];
+    s.scale = SCALES[s.scaleName];
+    if (style.pent && s.scaleName !== 'harmonicMinor') {
+      const major = ['ionian', 'lydian', 'mixolydian'].includes(s.scaleName);
+      s.melScale = major ? PENT.major : PENT.minor;
+    } else {
+      s.melScale = s.scale;
+    }
+    s.bpm = style.bpm[0] + kr.below(style.bpm[1] - style.bpm[0] + 1);
+
+    // The place's own lead instrument (changes with the coarse cell, like style and key).
+    s.inst = makeInstrument(stream(seed.coarse, 901));
+    s.instV = s.inst;
+
+    s.sectionBars = 8 * style.chordBars;
+    this.s = s;
+    this._newSection(full);
+  }
+
+  _newSection(intro) {
+    const s = this.s;
+    const style = s.style;
+    const secSeed = mix32((s.fine ^ Math.imul(s.sectionIdx + 1, 0x9e3779b1)) >>> 0);
+    const r = stream(secSeed, 1);
+
+    // Harmony: keep the last progression 40% of the time so ideas come back.
+    const keepProg = s.sectionIdx > 0 && r.chance(0.4);
+    const pr = stream(secSeed, 2);
+    if (!keepProg) {
+      s.prog = makeProgression(pr, s.scaleName, 4, style.stay, style.starts);
+    }
+    if (!(s.sectionIdx > 0 && r.chance(0.5))) s.motifSeed = stream(secSeed, 3).next();
+    s.answer = r.chance(0.6);
+    s.instV = morphInstrument(s.inst, stream(secSeed, 902));
+
+    // Arrangement: which layers play in this section.
+    const layers = {};
+    if (intro) {
+      const cand = ['pad', 'bass', 'arp']
+        .map((n) => [n, style.layerProb[n]])
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 2);
+      for (const n of LAYERS) layers[n] = false;
+      for (const [n] of cand) layers[n] = true;
+      if (style.introDrums) layers.drums = true; // e.g. techno opens with the kick
+    } else {
+      let count = 0;
+      for (const n of LAYERS) {
+        layers[n] = r.chance(style.layerProb[n]);
+        if (layers[n]) count++;
+      }
+      if (count < 2) {
+        const top = LAYERS.map((n) => [n, style.layerProb[n]])
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 2);
+        for (const [n] of top) layers[n] = true;
+      }
+    }
+    if (!style.drums) layers.drums = false;
+    s.layers = layers;
+
+    s.bright = style.bright[0] + r.float() * (style.bright[1] - style.bright[0]);
+    s.densMul = 0.6 + r.float() * 0.8;
+
+    // Drum groove for the whole section.
+    if (style.drums) {
+      const d = style.drums;
+      const kick = style.drums.kick ? pat(d.kick) : [];
+      const gr = stream(secSeed, 4);
+      for (const g of [3, 7, 10, 11, 14, 15]) {
+        if (gr.chance(d.ghost * 0.4) && !kick.includes(g)) kick.push(g);
+      }
+      s.groove = { kick, snare: d.snare ? pat(d.snare) : [] };
+    }
+
+    // Arpeggio "seq" mode pattern.
+    const sr = stream(secSeed, 5);
+    s.seqPat = [];
+    s.seqGate = [];
+    for (let i = 0; i < 16; i++) {
+      s.seqPat.push(sr.below(6));
+      s.seqGate.push(sr.chance(0.78) ? 1 : 0);
+    }
+
+    s.barInSection = 0;
+    s.secSeed = secSeed;
+  }
+
+  // ---------------------------------------------------------------- planning
+
+  nextBar() {
+    if (this.pending) {
+      this._latch(this.pending);
+      this.pending = null;
+      this.barCount = 0;
+    } else if (!this.s) {
+      this._latch({ style: -1, coarse: 1, fine: 1 });
+    }
+    let s = this.s;
+    if (s.barInSection >= s.sectionBars) {
+      s.sectionIdx++;
+      this._newSection(false);
+    }
+
+    const style = s.style;
+
+    // Tempo: from the seed, or following movement speed. Moves at most
+    // MAX_BPM_STEP per bar so changes feel like accelerating, not jumping.
+    let targetBpm = s.bpm;
+    if (this.tempoFactor !== null) {
+      const lo = style.bpm[0] * 0.9;
+      const hi = Math.max(style.bpm[1] * 1.1, FOLLOW_TOP_BPM);
+      targetBpm = Math.round(lo + this.tempoFactor * (hi - lo));
+    }
+    if (this.tempoOv !== null) this.curBpm = this.tempoOv;
+    else if (this.curBpm === null) this.curBpm = targetBpm;
+    else this.curBpm += Math.max(-MAX_BPM_STEP, Math.min(MAX_BPM_STEP, targetBpm - this.curBpm));
+
+    const cb = style.chordBars;
+    const j = s.barInSection;
+    const prog = s.prog;
+    const progLen = 4 * cb;
+    const jj = j % progLen;
+    const chordIdx = Math.floor(jj / cb);
+    const posInChord = jj % cb;
+    const repeat = Math.floor(j / progLen);
+    const nextChordIdx = (chordIdx + (posInChord === cb - 1 ? 1 : 0)) % 4;
+    const degree = prog[chordIdx];
+    const nextDegree = prog[nextChordIdx];
+    const lastBar = j === s.sectionBars - 1;
+
+    const rr = stream(s.secSeed, 200 + j);
+    const opts = {
+      seventh: stream(s.secSeed, 300 + chordIdx).chance(style.sevenths),
+      sus: null,
+    };
+    const susR = stream(s.secSeed, 400 + chordIdx);
+    if (susR.chance(style.sus)) opts.sus = susR.chance(0.5) ? '2' : '4';
+    const tones = chordTones(s.scale, degree, opts);
+
+    const steps = [];
+    for (let i = 0; i < STEPS_PER_BAR; i++) steps.push([]);
+    const L = s.layers;
+    const hum = s.hum;
+
+    // ---- pad
+    if (L.pad && posInChord === 0) {
+      const notes = tones.map((t) => fold(48 + s.pc + t, 55)).sort((a, b) => a - b);
+      if (!L.bass) notes.unshift(fold(48 + s.pc + tones[0], 43));
+      for (const n of notes) {
+        steps[0].push({ voice: 'pad', note: n, vel: 0.5 + hum.float() * 0.08, len: STEPS_PER_BAR * cb });
+      }
+    }
+
+    // ---- bass
+    if (L.bass) this._planBass(steps, s, tones, degree, nextDegree, posInChord, rr, hum);
+
+    // ---- arp
+    if (L.arp) this._planArp(steps, s, tones, j, hum);
+
+    // ---- lead
+    if (L.lead || this.leadOv || this.leadProc) this._planLead(steps, s, tones, j, jj, repeat, progLen, cb, lastBar);
+
+    // ---- drums
+    if (L.drums && style.drums) this._planDrums(steps, s, j, lastBar, rr, hum);
+
+    const t = s.sectionBars > 1 ? j / (s.sectionBars - 1) : 0;
+    const plan = {
+      steps,
+      bpm: this.curBpm,
+      swing: style.swing,
+      swing8: style.swing8 || 0,
+      fx: style.fx,
+      patches: style.patches,
+      bright: s.bright * (0.78 + 0.22 * t),
+      bar: this.barCount,
+      section: s.sectionIdx,
+      chordDegree: degree,
+      trim: style.trim || 1,
+      duck: L.drums && style.drums ? 0.4 : 0,
+      layers: { ...L, lead: !!(L.lead || this.leadOv || this.leadProc) },
+      leadSynth: this.leadProc && !this.leadOv ? s.instV : null,
+    };
+    s.barInSection++;
+    this.barCount++;
+    return plan;
+  }
+
+  _planBass(steps, s, tones, degree, nextDegree, posInChord, rr, hum) {
+    const style = s.style;
+    const cb = style.chordBars;
+    const root = fold(36 + s.pc + s.scale[degree], 36);
+    const mode = style.bass.mode;
+    const push = (st, note, vel, len) =>
+      steps[st].push({ voice: 'bass', note, vel: vel * (0.92 + hum.float() * 0.08), len });
+    if (mode === 'sub' || mode === 'drone') {
+      if (posInChord === 0) push(0, root, 0.8, STEPS_PER_BAR * cb - 0.5);
+    } else if (mode === 'pulse') {
+      const fifth = rr.chance(0.3);
+      for (let st = 0; st < 16; st += 2) {
+        const n = st === 14 && fifth ? root + 7 : root;
+        push(st, n, st % 8 === 0 ? 0.85 : 0.65, 1.7);
+      }
+    } else if (mode === 'offbeat') {
+      for (let st = 2; st < 16; st += 4) push(st, root, 0.8, 1.6);
+    } else if (mode === 'octave') {
+      for (let st = 0; st < 16; st += 2) push(st, st % 4 === 2 ? root + 12 : root, 0.7, 1.2);
+    } else if (mode === 'acid') {
+      // 16th-note acid line. The kick owns the beat, so the bass plays the gaps;
+      // the section's random pattern picks which gaps, which note and which
+      // steps are accented (and open the filter wider).
+      const third = fold(36 + s.pc + tones[1], 36);
+      const fifth = fold(36 + s.pc + tones[2], 36);
+      const pick = [root, root, root + 12, third, fifth, root + 12];
+      for (let st = 0; st < 16; st++) {
+        if (st % 4 === 0 || !s.seqGate[st]) continue;
+        const k = s.seqPat[(st * 5 + 3) & 15];
+        push(st, pick[k], k >= 4 ? 0.95 : 0.66, 1.3);
+      }
+    } else if (mode === 'walk') {
+      const nextRoot = fold(36 + s.pc + s.scale[nextDegree], 36);
+      const third = root + (s.scale[(degree + 2) % 7] - s.scale[degree] + 12) % 12;
+      const fifth = root + 7;
+      const approach = nextRoot + (rr.chance(0.5) ? -1 : 1);
+      const seq = [root, rr.chance(0.5) ? third : fifth, fifth, approach];
+      for (let i = 0; i < 4; i++) push(i * 4, seq[i], i === 0 ? 0.85 : 0.65, 3.6);
+    }
+  }
+
+  _planArp(steps, s, tones, j, hum) {
+    const a = s.style.arp;
+    const rate = a.rate;
+    const pool = [];
+    const base = tones.map((t) => fold(48 + s.pc + t, 60)).sort((x, y) => x - y);
+    for (let o = 0; o < a.octaves; o++) for (const n of base) pool.push(n + 12 * o);
+    const N = pool.length;
+    const ar = stream(s.secSeed, 500 + j);
+    for (let st = 0, k = 0; st < 16; st += rate, k++) {
+      // Draw unconditionally so patterns stay in sync when options change.
+      const pick = ar.below(N);
+      const skip = ar.float();
+      let idx;
+      let play = true;
+      switch (a.mode) {
+        case 'up':
+          idx = k % N;
+          break;
+        case 'down':
+          idx = N - 1 - (k % N);
+          break;
+        case 'updown': {
+          const period = Math.max(1, 2 * N - 2);
+          const m = k % period;
+          idx = m < N ? m : period - m;
+          break;
+        }
+        case 'seq':
+          idx = s.seqPat[st] % N;
+          play = s.seqGate[st] === 1;
+          break;
+        default:
+          idx = pick;
+          play = skip > 0.3;
+      }
+      if (!play) continue;
+      const accent = st % 4 === 0 ? 1.12 : 0.92;
+      steps[st].push({
+        voice: 'arp',
+        note: pool[idx],
+        vel: a.vel * accent * (0.9 + hum.float() * 0.1),
+        len: rate * a.gate,
+      });
+    }
+  }
+
+  _planLead(steps, s, tones, j, jj, repeat, progLen, cb, lastBar) {
+    const style = s.style;
+    const key = repeat === 1 && jj === progLen - 1 && s.answer ? 99 : jj % (2 * cb);
+    const r = stream(s.motifSeed, 31 * key + 7);
+    let dens = Math.min(0.9, style.lead.density * s.densMul);
+    const forced = this.leadOv || this.leadProc;
+    if (forced) dens = Math.max(dens, 0.26);
+    const mel = s.melScale;
+    const origin = 48 + s.pc;
+    let lo = style.lead.lo || 62;
+    let hi = style.lead.hi || 88;
+    if (this.leadOv) {
+      lo = this.leadOv.lo;
+      hi = this.leadOv.hi;
+    } else if (this.leadProc) {
+      lo = s.instV.lo;
+      hi = s.instV.hi;
+    }
+
+    // Chord tones across the lead register, as midi notes.
+    const ctMidi = [];
+    for (let o = -2; o <= 4; o++) for (const t of tones) ctMidi.push(origin + t + 12 * o);
+    const nearestChordTone = (m) => {
+      let best = ctMidi[0];
+      let bd = 1e9;
+      for (const c of ctMidi) {
+        const d = Math.abs(c - m);
+        if (d < bd) {
+          bd = d;
+          best = c;
+        }
+      }
+      return best;
+    };
+
+    const hits = [];
+    let last = -99;
+    let idx = nearestIdx(mel, s.leadMidi - origin);
+    const deltas = [-3, -2, -2, -1, -1, -1, 0, 1, 1, 1, 2, 2, 3];
+    for (let st = 0; st < 16; st++) {
+      const chance = r.float();
+      const delta = deltas[r.below(deltas.length)];
+      const snap = r.float();
+      const velJ = r.float();
+      const p = Math.min(1, dens * 3.2 * METER[st]);
+      if (chance < p && st - last >= style.lead.minGap) {
+        let m = origin + scaleNote(mel, idx + delta);
+        idx += delta;
+        if (hits.length === 0 || (st % 4 === 0 && snap < 0.65)) {
+          m = nearestChordTone(m);
+          idx = nearestIdx(mel, m - origin);
+        }
+        while (m > hi) {
+          idx -= mel.length;
+          m -= 12;
+        }
+        while (m < lo) {
+          idx += mel.length;
+          m += 12;
+        }
+        hits.push({ st, m, vel: style.lead.vel * (METER[st] > 0.5 ? 1 : 0.85) * (0.88 + velJ * 0.12) });
+        last = st;
+      }
+    }
+    for (let i = 0; i < hits.length; i++) {
+      const h = hits[i];
+      const next = i + 1 < hits.length ? hits[i + 1].st : 16;
+      const len = Math.max(1, Math.min(next - h.st, 8) * 0.92);
+      steps[h.st].push({ voice: 'lead', note: h.m, vel: h.vel, len });
+      s.leadMidi = h.m;
+    }
+  }
+
+  _planDrums(steps, s, j, lastBar, rr, hum) {
+    const d = s.style.drums;
+    const lvl = d.level;
+    const g = s.groove;
+    const add = (st, voice, note, vel, len) =>
+      steps[st].push({ voice, note, vel: Math.min(1, vel * lvl * (0.93 + hum.float() * 0.07)), len: len || 1 });
+
+    for (const st of g.kick) add(st, 'kick', 36, [0, 8].includes(st) || st % 4 === 0 ? 1.0 : 0.6);
+    for (const st of g.snare) {
+      if (lastBar && st === 12) continue;
+      add(st, 'snare', 38, 0.85);
+    }
+    const hat = d.hat;
+    if (hat === 'eighth') {
+      for (let st = 0; st < 16; st += 2) add(st, 'hat', 42, st % 4 === 2 ? 0.55 : 0.35);
+    } else if (hat === 'offbeat') {
+      for (let st = 2; st < 16; st += 4) add(st, 'hat', 46, 0.5, 2);
+    } else if (hat === 'sixteenth') {
+      // Closed 16ths with an open hat on every off-beat eighth.
+      for (let st = 0; st < 16; st++) {
+        if (st % 4 === 2) add(st, 'hat', 46, 0.5, 2);
+        else add(st, 'hat', 42, st % 2 ? 0.22 : 0.34);
+      }
+    } else if (hat === 'sparse') {
+      for (let st = 0; st < 16; st += 2) if (rr.chance(0.35)) add(st, 'hat', 42, 0.3);
+    }
+    if (lastBar) {
+      // Fill: snare roll, or toms when the style has no snare.
+      if (d.snare && s.style.id !== 'epic') {
+        for (let k = 0; k < 4; k++) add(12 + k, 'snare', 38, 0.5 + k * 0.14);
+      } else {
+        const toms = [50, 47, 45, 43];
+        for (let k = 0; k < 4; k++) add(12 + k, 'tom', toms[k], 0.7 + k * 0.08, 2);
+      }
+    }
+  }
+}
+
+
+/* ---- engine/patches.js ---- */
+// Patch table. Times in seconds, frequencies in Hz, detune in cents.
+//   wave   : 'saw' | 'pulse' | 'sine' | 'tri' | 'fm'
+//   osc2   : optional second oscillator (same wave) detuned by `detune` cents
+//   sub    : level of a sine one octave below
+//   cut    : base filter cutoff (Hz, scaled by the bright macro)
+//   fenv   : added cutoff (Hz) at envelope peak, decaying over fdec seconds
+//   key    : how much the cutoff follows pitch (0..1)
+//   res    : filter resonance 0..0.95
+//   fm*    : ratio / index / decay for the 'fm' wave
+//   vib    : vibrato depth in cents, vibRate in Hz
+//   pwm    : pulse-width LFO depth, pwmRate in Hz
+//   rev/dly: effect sends, pan: stereo spread (0 = centre)
+
+const PATCHES = {
+  padSoft: { wave: 'saw', detune: 9, osc2: true, sub: 0, cut: 1300, fenv: 0, fdec: 1, key: 0.3, res: 0.1,
+    a: 0.9, d: 1.5, s: 0.8, r: 2.5, gain: 0.2, rev: 0.6, dly: 0.12, pan: 0.5, pwm: 0 },
+  padDark: { wave: 'saw', detune: 14, osc2: true, sub: 0.3, cut: 620, fenv: 300, fdec: 2, key: 0.2, res: 0.2,
+    a: 1.6, d: 2, s: 0.7, r: 3.5, gain: 0.22, rev: 0.6, dly: 0.1, pan: 0.6, pwm: 0 },
+  padSaw: { wave: 'saw', detune: 12, osc2: true, sub: 0, cut: 2400, fenv: 1500, fdec: 0.9, key: 0.4, res: 0.12,
+    a: 0.25, d: 1, s: 0.75, r: 1.2, gain: 0.17, rev: 0.35, dly: 0.1, pan: 0.5, pwm: 0 },
+  padFM: { wave: 'fm', fmRatio: 1, fmIndex: 1.6, fmDecay: 0.9, detune: 0, osc2: false, sub: 0, cut: 6000, fenv: 0,
+    fdec: 1, key: 0, res: 0, a: 0.01, d: 1.8, s: 0.3, r: 0.8, gain: 0.22, rev: 0.35, dly: 0.2, pan: 0.3, pwm: 0 },
+  padPulse: { wave: 'pulse', pw: 0.3, detune: 7, osc2: true, sub: 0, cut: 3500, fenv: 0, fdec: 1, key: 0.3, res: 0.05,
+    a: 0.02, d: 0.3, s: 0.5, r: 0.15, gain: 0.1, rev: 0.1, dly: 0.1, pan: 0.4, pwm: 0.12, pwmRate: 0.6 },
+
+  bassSub: { wave: 'sine', detune: 0, osc2: false, sub: 0.35, cut: 500, fenv: 0, fdec: 1, key: 0, res: 0,
+    a: 0.02, d: 0.3, s: 0.9, r: 0.4, gain: 0.45, rev: 0, dly: 0, pan: 0, pwm: 0 },
+  bassSaw: { wave: 'saw', detune: 0, osc2: false, sub: 0.5, cut: 420, fenv: 1300, fdec: 0.18, key: 0.2, res: 0.3,
+    a: 0.004, d: 0.2, s: 0.55, r: 0.12, gain: 0.3, rev: 0, dly: 0, pan: 0, pwm: 0 },
+  bassPulse: { wave: 'pulse', pw: 0.4, detune: 0, osc2: false, sub: 0.4, cut: 600, fenv: 900, fdec: 0.1, key: 0.2,
+    res: 0.35, a: 0.003, d: 0.15, s: 0.4, r: 0.08, gain: 0.3, rev: 0, dly: 0, pan: 0, pwm: 0 },
+
+  arpPluck: { wave: 'saw', detune: 8, osc2: true, sub: 0, cut: 1800, fenv: 3000, fdec: 0.12, key: 0.5, res: 0.15,
+    a: 0.003, d: 0.25, s: 0, r: 0.3, gain: 0.17, rev: 0.3, dly: 0.35, pan: 0.6, pwm: 0 },
+  arpBell: { wave: 'fm', fmRatio: 3.5, fmIndex: 2, fmDecay: 0.7, detune: 0, osc2: false, sub: 0, cut: 9000, fenv: 0,
+    fdec: 1, key: 0, res: 0, a: 0.004, d: 1.6, s: 0, r: 1.2, gain: 0.17, rev: 0.5, dly: 0.4, pan: 0.7, pwm: 0 },
+  arpSaw: { wave: 'saw', detune: 0, osc2: false, sub: 0, cut: 1400, fenv: 3500, fdec: 0.1, key: 0.5, res: 0.3,
+    a: 0.002, d: 0.18, s: 0.2, r: 0.15, gain: 0.14, rev: 0.2, dly: 0.3, pan: 0.5, pwm: 0 },
+  arpPulse: { wave: 'pulse', pw: 0.25, detune: 0, osc2: false, sub: 0, cut: 3500, fenv: 1500, fdec: 0.08, key: 0.5,
+    res: 0.1, a: 0.002, d: 0.12, s: 0.25, r: 0.08, gain: 0.13, rev: 0.12, dly: 0.25, pan: 0.5, pwm: 0.1, pwmRate: 2 },
+
+  leadBell: { wave: 'fm', fmRatio: 2, fmIndex: 3, fmDecay: 1.0, detune: 0, osc2: false, sub: 0, cut: 9000, fenv: 0,
+    fdec: 1, key: 0, res: 0, a: 0.005, d: 2.2, s: 0, r: 1.5, gain: 0.2, rev: 0.55, dly: 0.45, pan: 0.3, pwm: 0 },
+  leadSaw: { wave: 'saw', detune: 7, osc2: true, sub: 0, cut: 2600, fenv: 1200, fdec: 0.3, key: 0.6, res: 0.2,
+    a: 0.02, d: 0.3, s: 0.7, r: 0.35, gain: 0.15, rev: 0.3, dly: 0.35, pan: 0.2, pwm: 0, vib: 12, vibRate: 5.2 },
+  leadPulse: { wave: 'pulse', pw: 0.5, detune: 0, osc2: false, sub: 0, cut: 5000, fenv: 0, fdec: 1, key: 0.4, res: 0.05,
+    a: 0.005, d: 0.1, s: 0.6, r: 0.1, gain: 0.12, rev: 0.12, dly: 0.15, pan: 0.2, pwm: 0.15, pwmRate: 3.1, vib: 8, vibRate: 5.8 },
+  leadFM: { wave: 'fm', fmRatio: 2, fmIndex: 2.2, fmDecay: 1.2, detune: 0, osc2: false, sub: 0, cut: 8000, fenv: 0,
+    fdec: 1, key: 0, res: 0, a: 0.01, d: 1.0, s: 0.2, r: 0.6, gain: 0.18, rev: 0.45, dly: 0.3, pan: 0.2, pwm: 0 },
+
+  // ---- Acoustic-style instruments -------------------------------------
+  // formants: [freq Hz, Q, gain] band-pass bank; dry: unfiltered mix level;
+  // breath: noise level; scoop: attack pitch bend in cents; vibDelay: seconds
+  // before vibrato fades in; fRise: cutoff swell time (brass).
+  leadSax: { wave: 'reed', detune: 0, osc2: false, sub: 0, cut: 5200, fenv: 1800, fdec: 0.25, key: 0.3, res: 0.05,
+    formants: [[520, 2.2, 1.0], [1500, 3, 0.55], [2700, 4, 0.25]], dry: 0.4, breath: 0.07,
+    a: 0.045, d: 0.3, s: 0.85, r: 0.14, gain: 0.36, rev: 0.3, dly: 0.2, pan: 0.15, pwm: 0,
+    vib: 22, vibRate: 5.3, vibDelay: 0.35, scoop: 40, scoopDec: 0.07 },
+  leadFlute: { wave: 'tri', detune: 0, osc2: false, sub: 0, cut: 3600, fenv: 600, fdec: 0.15, key: 0.5, res: 0,
+    formants: [[900, 2, 0.25]], dry: 0.9, breath: 0.2,
+    a: 0.06, d: 0.2, s: 0.9, r: 0.15, gain: 0.26, rev: 0.4, dly: 0.25, pan: 0.2, pwm: 0,
+    vib: 16, vibRate: 5.0, vibDelay: 0.4 },
+  leadClarinet: { wave: 'pulse', pw: 0.5, detune: 0, osc2: false, sub: 0, cut: 3200, fenv: 800, fdec: 0.2, key: 0.3, res: 0,
+    formants: [[600, 2.5, 0.8], [1800, 3, 0.3]], dry: 0.5, breath: 0.04,
+    a: 0.03, d: 0.25, s: 0.9, r: 0.1, gain: 0.19, rev: 0.3, dly: 0.2, pan: 0.15, pwm: 0,
+    vib: 10, vibRate: 5.2, vibDelay: 0.5 },
+  leadTrumpet: { wave: 'saw', detune: 0, osc2: false, sub: 0, cut: 900, fenv: 4200, fdec: 1, fRise: 0.05, key: 0.5, res: 0.05,
+    formants: [[1100, 3, 0.8], [2400, 3.5, 0.4]], dry: 0.5, breath: 0.02,
+    a: 0.03, d: 0.2, s: 0.8, r: 0.1, gain: 0.17, rev: 0.3, dly: 0.2, pan: 0.15, pwm: 0,
+    vib: 9, vibRate: 5.6, vibDelay: 0.4, scoop: 30, scoopDec: 0.05 },
+  leadVibes: { wave: 'fm', fmRatio: 3, fmIndex: 0.9, fmDecay: 0.45, detune: 0, osc2: false, sub: 0, cut: 9000, fenv: 0,
+    fdec: 1, key: 0, res: 0, a: 0.003, d: 1.8, s: 0, r: 1.2, gain: 0.2, rev: 0.4, dly: 0.3, pan: 0.3, pwm: 0 },
+  leadOrgan: { wave: 'organ', detune: 0, osc2: false, sub: 0, cut: 6000, fenv: 0, fdec: 1, key: 0, res: 0,
+    a: 0.01, d: 0.05, s: 0.9, r: 0.08, gain: 0.16, rev: 0.25, dly: 0.15, pan: 0.2, pwm: 0,
+    vib: 6, vibRate: 6.2, vibDelay: 0.1 },
+  leadChoir: { wave: 'saw', detune: 10, osc2: true, sub: 0, cut: 4500, fenv: 0, fdec: 1, key: 0.2, res: 0,
+    formants: [[800, 5, 1.0], [1150, 6, 0.6], [2900, 8, 0.25]], dry: 0.15, breath: 0.03,
+    a: 0.25, d: 0.5, s: 0.8, r: 0.5, gain: 0.28, rev: 0.5, dly: 0.2, pan: 0.3, pwm: 0,
+    vib: 10, vibRate: 5.0, vibDelay: 0.3 },
+
+  padStrings: { wave: 'saw', detune: 16, osc2: true, sub: 0, cut: 2800, fenv: 0, fdec: 1, key: 0.4, res: 0.05,
+    a: 0.4, d: 1.5, s: 0.85, r: 0.7, gain: 0.17, rev: 0.4, dly: 0.08, pan: 0.6, pwm: 0,
+    vib: 5, vibRate: 5.1, vibDelay: 0.5 },
+  padChoir: { wave: 'saw', detune: 10, osc2: true, sub: 0, cut: 4500, fenv: 0, fdec: 1, key: 0.2, res: 0,
+    formants: [[700, 5, 1.0], [1100, 6, 0.6], [2800, 8, 0.25]], dry: 0.12, breath: 0.02,
+    a: 0.6, d: 1.5, s: 0.8, r: 1.4, gain: 0.26, rev: 0.6, dly: 0.1, pan: 0.6, pwm: 0,
+    vib: 9, vibRate: 5.0, vibDelay: 0.5 },
+  bassUpright: { wave: 'saw', detune: 0, osc2: false, sub: 0.45, cut: 330, fenv: 700, fdec: 0.1, key: 0.3, res: 0.1,
+    a: 0.006, d: 0.55, s: 0.12, r: 0.2, gain: 0.38, rev: 0, dly: 0, pan: 0, pwm: 0 },
+  // Techno: resonant 303-style acid bass (cutoff snaps up and falls) and a short detuned stab.
+  bassAcid: { wave: 'saw', detune: 0, osc2: false, sub: 0.3, cut: 280, fenv: 2300, fdec: 0.13, key: 0.2, res: 0.72,
+    a: 0.003, d: 0.14, s: 0.3, r: 0.05, gain: 0.27, rev: 0, dly: 0.05, pan: 0, pwm: 0 },
+  arpStab: { wave: 'saw', detune: 10, osc2: true, sub: 0, cut: 900, fenv: 2800, fdec: 0.09, key: 0.4, res: 0.25,
+    a: 0.002, d: 0.13, s: 0, r: 0.1, gain: 0.16, rev: 0.3, dly: 0.4, pan: 0.5, pwm: 0 },
+  arpVibes: { wave: 'fm', fmRatio: 3, fmIndex: 0.8, fmDecay: 0.5, detune: 0, osc2: false, sub: 0, cut: 9000, fenv: 0,
+    fdec: 1, key: 0, res: 0, a: 0.003, d: 1.5, s: 0, r: 1, gain: 0.15, rev: 0.4, dly: 0.25, pan: 0.6, pwm: 0 },
+};
+
+// Instruments the user can pick for the lead line (null = the style decides).
+const LEAD_INSTRUMENTS = [
+  { id: 'procedural', name: 'Procedural', patch: 'procedural', lo: 55, hi: 88 }, // invented per place (instrument.js)
+  { id: 'auto', name: 'Auto', patch: null },
+  { id: 'sax', name: 'Saxophone', patch: 'leadSax', lo: 55, hi: 81 },
+  { id: 'flute', name: 'Flute', patch: 'leadFlute', lo: 67, hi: 96 },
+  { id: 'clarinet', name: 'Clarinet', patch: 'leadClarinet', lo: 55, hi: 91 },
+  { id: 'trumpet', name: 'Trumpet', patch: 'leadTrumpet', lo: 60, hi: 84 },
+  { id: 'vibes', name: 'Vibraphone', patch: 'leadVibes', lo: 60, hi: 96 },
+  { id: 'organ', name: 'Organ', patch: 'leadOrgan', lo: 55, hi: 88 },
+  { id: 'choir', name: 'Choir', patch: 'leadChoir', lo: 55, hi: 79 },
+];
+
+
 /* ---- engine/fx.js ---- */
 // Effects: tempo-synced ping-pong delay and a Freeverb-style stereo reverb.
 
@@ -1778,6 +1996,15 @@ class Reverb {
 // an AudioWorklet and in Node (for offline tests).
 
 
+// Generate instruments once up front so the first ones during playback are not
+// slow (JIT warm-up, probe buffers): the generator renders a short probe note.
+let warmed = false;
+function warmInstruments() {
+  if (warmed) return;
+  warmed = true;
+  for (let i = 0; i < 80; i++) makeInstrument(stream(i * 977 + 1, 901));
+}
+
 const MAX_CHUNK = 256;
 const N_VOICES = 24;
 const N_DRUMS = 8;
@@ -1814,6 +2041,7 @@ class Engine {
 
     this.running = false;
     this.leadPatch = null;
+    warmInstruments();
     this.volume = 0.8;
     this.volNow = 0.0;
     this.bright = 0.5;
@@ -1878,6 +2106,13 @@ class Engine {
   // Replace the lead voice with a named patch (and force the lead line on,
   // in that instrument's range). name = null restores the style's own lead.
   setLeadPatch(name, lo, hi) {
+    // 'procedural': every place invents its own lead instrument.
+    this.composer.setLeadProcedural(name === 'procedural');
+    if (name === 'procedural') {
+      this.leadPatch = null;
+      this.composer.setLeadOverride(null);
+      return;
+    }
     const p = name ? PATCHES[name] : null;
     this.leadPatch = p || null;
     this.composer.setLeadOverride(p ? { lo: lo || 55, hi: hi || 88 } : null);
@@ -1927,7 +2162,7 @@ class Engine {
       if (v === 'kick') this.duck = 1;
       return;
     }
-    const patch = (v === 'lead' && this.leadPatch) || PATCHES[plan.patches[v]];
+    const patch = (v === 'lead' && (plan.leadSynth || this.leadPatch)) || PATCHES[plan.patches[v]];
     if (!patch) return;
     let slot = null;
     for (const s of this.voices) {

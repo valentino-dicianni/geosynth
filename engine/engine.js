@@ -6,6 +6,17 @@ import { Composer, STEPS_PER_BAR } from './composer.js';
 import { PATCHES } from './patches.js';
 import { SynthVoice, DrumVoice } from './voices.js';
 import { PingPongDelay, Reverb } from './fx.js';
+import { makeInstrument } from './instrument.js';
+import { stream } from './rng.js';
+
+// Generate instruments once up front so the first ones during playback are not
+// slow (JIT warm-up, probe buffers): the generator renders a short probe note.
+let warmed = false;
+function warmInstruments() {
+  if (warmed) return;
+  warmed = true;
+  for (let i = 0; i < 80; i++) makeInstrument(stream(i * 977 + 1, 901));
+}
 
 const MAX_CHUNK = 256;
 const N_VOICES = 24;
@@ -43,6 +54,7 @@ export class Engine {
 
     this.running = false;
     this.leadPatch = null;
+    warmInstruments();
     this.volume = 0.8;
     this.volNow = 0.0;
     this.bright = 0.5;
@@ -107,6 +119,13 @@ export class Engine {
   // Replace the lead voice with a named patch (and force the lead line on,
   // in that instrument's range). name = null restores the style's own lead.
   setLeadPatch(name, lo, hi) {
+    // 'procedural': every place invents its own lead instrument.
+    this.composer.setLeadProcedural(name === 'procedural');
+    if (name === 'procedural') {
+      this.leadPatch = null;
+      this.composer.setLeadOverride(null);
+      return;
+    }
     const p = name ? PATCHES[name] : null;
     this.leadPatch = p || null;
     this.composer.setLeadOverride(p ? { lo: lo || 55, hi: hi || 88 } : null);
@@ -156,7 +175,7 @@ export class Engine {
       if (v === 'kick') this.duck = 1;
       return;
     }
-    const patch = (v === 'lead' && this.leadPatch) || PATCHES[plan.patches[v]];
+    const patch = (v === 'lead' && (plan.leadSynth || this.leadPatch)) || PATCHES[plan.patches[v]];
     if (!patch) return;
     let slot = null;
     for (const s of this.voices) {

@@ -1,14 +1,15 @@
 // GPS fix -> seed. Two grid levels:
-//   coarse (~11 km): style, key, mode, tempo
-//   fine   (~110 m): progression, melodies, arrangement
-// Hysteresis stops boundary flapping, the lon step is scaled by latitude so
-// cells stay roughly square, and fine updates are rate limited so driving
-// does not re-roll the music every few seconds.
+//   coarse (~250 m): style, key, mode, tempo (a new style every few minutes of walking)
+//   fine   (~60 m):  progression, melodies, arrangement
+// Hysteresis (wider when the fix is inaccurate) stops boundary flapping, the lon
+// step is scaled by latitude so cells stay roughly square, and updates are rate
+// limited so driving does not re-roll the music every few seconds.
 
 import { hash3 } from '../engine/rng.js';
 
 const SALT_COARSE = 0x434f4152; // 'COAR'
 const SALT_FINE = 0x46494e45; // 'FINE'
+export const M_PER_DEG = 111195;
 
 function snap(prev, x, step, hyst) {
   const u = x / step;
@@ -27,10 +28,11 @@ function lonScale(latDeg) {
 export class GeoSeeder {
   constructor(opts) {
     const o = opts || {};
-    this.coarseDeg = o.coarseDeg || 0.1;
-    this.fineDeg = o.fineDeg || 0.001;
+    this.coarseDeg = o.coarseDeg || 0.00225; // ~250 m
+    this.fineDeg = o.fineDeg || 0.00054; // ~60 m
     this.hyst = o.hyst === undefined ? 0.2 : o.hyst;
     this.minFineHoldMs = o.minFineHoldMs === undefined ? 20000 : o.minFineHoldMs;
+    this.minCoarseHoldMs = o.minCoarseHoldMs === undefined ? 0 : o.minCoarseHoldMs;
     this.maxAccuracyM = o.maxAccuracyM || 30000;
     this.fineAccuracyM = o.fineAccuracyM || 400;
     this.cLat = null;
@@ -38,7 +40,14 @@ export class GeoSeeder {
     this.fLat = null;
     this.fLon = null;
     this.lastFineChange = -Infinity;
+    this.lastCoarseChange = -Infinity;
     this.seed = null;
+  }
+
+  // Hysteresis as a fraction of a cell: at least `hyst`, and about 1.5x the
+  // fix accuracy so GPS jitter cannot flip a cell near its edge.
+  _hyst(accuracyM, stepDeg) {
+    return Math.max(this.hyst, Math.min(0.8, (1.5 * accuracyM) / (stepDeg * M_PER_DEG)));
   }
 
   // Returns a new { coarse, fine, ... } seed object when the seed changed,
@@ -49,23 +58,30 @@ export class GeoSeeder {
     const acc = Number.isFinite(accuracyM) ? accuracyM : 0;
     if (acc > this.maxAccuracyM) return null;
     const now = Number.isFinite(nowMs) ? nowMs : 0;
+    const first = this.seed === null;
 
-    const cLat = snap(this.cLat, lat, this.coarseDeg, this.hyst);
-    const latCenter = (cLat + 0.5) * this.coarseDeg;
-    const ls = lonScale(latCenter);
-    const cLonStep = this.coarseDeg / ls;
-    const cLon = snap(this.cLon, lon, cLonStep, this.hyst);
-    const coarseChanged = cLat !== this.cLat || cLon !== this.cLon;
+    const hC = this._hyst(acc, this.coarseDeg);
+    let cLat = snap(this.cLat, lat, this.coarseDeg, hC);
+    let ls = lonScale((cLat + 0.5) * this.coarseDeg);
+    let cLon = snap(this.cLon, lon, this.coarseDeg / ls, hC);
+    let coarseChanged = cLat !== this.cLat || cLon !== this.cLon;
+    if (coarseChanged && !first && now - this.lastCoarseChange < this.minCoarseHoldMs) {
+      // Moving fast (driving): keep the current style for now. The change is
+      // not lost: it is detected again and applied once the hold has passed.
+      cLat = this.cLat;
+      cLon = this.cLon;
+      coarseChanged = false;
+      ls = lonScale((cLat + 0.5) * this.coarseDeg);
+    }
 
     let fLat = this.fLat;
     let fLon = this.fLon;
     let fineChanged = false;
     const fineOk = acc <= this.fineAccuracyM;
-    const first = this.seed === null;
     if (coarseChanged || first || (fineOk && now - this.lastFineChange >= this.minFineHoldMs)) {
-      const nLat = snap(coarseChanged ? null : this.fLat, lat, this.fineDeg, this.hyst);
-      const fLonStep = this.fineDeg / ls;
-      const nLon = snap(coarseChanged ? null : this.fLon, lon, fLonStep, this.hyst);
+      const hF = this._hyst(acc, this.fineDeg);
+      const nLat = snap(coarseChanged ? null : this.fLat, lat, this.fineDeg, hF);
+      const nLon = snap(coarseChanged ? null : this.fLon, lon, this.fineDeg / ls, hF);
       if (nLat !== this.fLat || nLon !== this.fLon || coarseChanged) {
         fLat = nLat;
         fLon = nLon;
@@ -80,6 +96,7 @@ export class GeoSeeder {
     this.fLat = fLat;
     this.fLon = fLon;
     if (fineChanged || first) this.lastFineChange = now;
+    if (coarseChanged || first) this.lastCoarseChange = now;
 
     const coarse = hash3(cLat, cLon, SALT_COARSE);
     const fine = hash3(fLat, fLon, SALT_FINE);

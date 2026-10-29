@@ -21,7 +21,7 @@ export const state = {
   route: 'element',
   speed: new SpeedTracker(),
   tempoFollow: true,
-  leadInst: 'auto',
+  leadInst: 'procedural',
   lastFactor: -1,
   speedTimer: null,
   gpsFixAt: null, // performance.now() of the last live GPS fix (null: none yet)

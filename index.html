@@ -29,8 +29,8 @@
     </header>
 
     <section id="start" class="card">
-      <p class="hint">Your position picks the style, key and tempo (about 10 km grid) and the melodies
-        (about 110 m grid). Same place, same music. Everything runs on this device: coordinates are never sent anywhere.</p>
+      <p class="hint">Your position picks the style, key and tempo (about 250 m grid) and the melodies
+        (about 60 m grid). Same place, same music. Everything runs on this device: coordinates are never sent anywhere.</p>
       <button id="startBtn" class="primary" type="button">Start listening</button>
       <p id="startNote" class="note" role="status"></p>
     </section>
@@ -80,8 +80,8 @@
         <div id="demoPanel" hidden>
           <label>Speed (tempo stops rising at 100 km/h)
             <select id="demoSpeed">
-              <option value="8">Cycle (29 km/h, new spot every ~14 s)</option>
-              <option value="30">Drive (108 km/h, new spot every ~4 s)</option>
+              <option value="8">Cycle (29 km/h, new style every ~30 s)</option>
+              <option value="30">Drive (108 km/h, new style every ~8 s)</option>
               <option value="150" selected>Fast (540 km/h)</option>
               <option value="2500">Flight (9000 km/h, new style every ~4 s)</option>
             </select>
@@ -109,7 +109,8 @@
       <div class="card">
         <h2>Lead instrument</h2>
         <div id="leadChips" class="chips"></div>
-        <p class="note">Auto uses the style's own lead (Neon and Smoke feature a saxophone).</p>
+        <p id="leadNow" class="note mono"></p>
+        <p class="note">Procedural invents a new instrument for every place (oscillator, envelope, filter, vibrato, vowel-like formants, breath, register), so the sound changes as you walk. Auto uses the style's own lead (Neon and Smoke feature a saxophone).</p>
       </div>
 
       <div class="card">

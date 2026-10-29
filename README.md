@@ -8,20 +8,23 @@ leave the device.
 
 ```
 GPS fix -> GeoSeeder (src/geo.js)
-             coarse cell ~11 km -> style, key, mode, tempo
-             fine cell   ~110 m -> progressions, melodies, arrangement
+             coarse cell ~250 m -> style, key, mode, tempo, lead instrument
+             fine cell   ~60 m  -> progressions, melodies, arrangement
           -> postMessage -> AudioWorklet (worklet.bundle.js)
              Composer (engine/composer.js)  integer-only, seeded PRNG streams
              -> Engine (engine/engine.js)   sample-accurate step scheduler
-             -> voices + FX (voices.js, fx.js) -> master -> speakers
+             -> voices + FX (voices.js, instrument.js, fx.js) -> master -> speakers
 ```
 
 - **Same place, same music.** Seeds are a pure function of the grid cell, and
   the composer uses its own integer PRNG (sfc32), never `Math.random`.
-- **Hysteresis** (20 % of a cell) stops GPS jitter from flipping the seed on a
-  cell border. Fine-cell changes are rate limited to one per 20 s so driving
-  does not re-roll the music constantly. Poor accuracy (> 400 m) freezes the
-  fine seed.
+- **Walking changes the music.** A new style, key and tempo about every 250 m,
+  new melodies about every 60 m (a few minutes of walking per style).
+- **Hysteresis** (20 % of a cell, more when the reported GPS accuracy is poor)
+  stops GPS jitter from flipping the seed on a cell border. Fine-cell changes
+  are rate limited to one per 20 s and style changes to one per 15 s (a change
+  held back is applied afterwards, not lost), so driving does not re-roll the
+  music constantly. Poor accuracy (> 400 m) freezes the fine seed.
 - **New seeds latch on the next bar line.** Old notes ring out; tempo, filter
   and effects glide.
 - **10 styles:** Drift, Neon, Pulse (house), Glass, Abyss, Arcade, Chill, Epic, Smoke
@@ -39,6 +42,14 @@ piano. They are synthesised (reed oscillator plus formant filters, breath
 noise, a pitch scoop into each note, delayed vibrato), not samples. Pick a
 **Lead instrument** in the app to play any of them in any style; the melody then
 stays in that instrument's range.
+
+**Procedural** (the default) invents a new lead instrument for every coarse
+cell (`engine/instrument.js`): oscillator type (saw, pulse, triangle, FM, reed,
+organ), plucked or sustained envelope, filter, vibrato, vowel-like formants,
+breath, pitch scoop, effect sends and register, all drawn from the place seed.
+Each section morphs it slightly. Its loudness is matched by a short probe
+render, so every generated instrument sits at the same level. The app shows
+the current one ("Instrument here: ...").
 
 ## Tempo follows movement
 

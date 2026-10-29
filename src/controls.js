@@ -42,7 +42,7 @@ export function buildStyleChips() {
 
 export function setLeadInstrument(id) {
   state.leadInst = id;
-  save('lead', id);
+  save('leadPick', id);
   const inst = LEAD_INSTRUMENTS.find((i) => i.id === id) || LEAD_INSTRUMENTS[0];
   for (const c of $('leadChips').children) c.setAttribute('aria-pressed', String(c.dataset.lead === id));
   if (state.node) state.node.port.postMessage({ type: 'lead', patch: inst.patch, lo: inst.lo, hi: inst.hi });

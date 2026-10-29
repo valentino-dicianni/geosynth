@@ -51,7 +51,7 @@ function restoreSettings() {
   state.source = load('source', 'gps');
   state.route = load('route', isIOS() ? 'direct' : 'element');
   state.tempoFollow = load('tempoFollow', true);
-  state.leadInst = load('lead', 'auto');
+  state.leadInst = load('leadPick', 'procedural');
   $('tempoFollow').checked = state.tempoFollow;
   state.bpm = clampBpm(Number(load('bpm', 120)) || 120);
   state.bpmManual = load('bpmManual', false) === true;

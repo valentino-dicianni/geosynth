@@ -20,6 +20,7 @@ import {
   makeProgression,
   pat,
 } from './theory.js';
+import { makeInstrument, morphInstrument } from './instrument.js';
 
 export const STEPS_PER_BAR = 16;
 const MAX_BPM_STEP = 12;
@@ -37,6 +38,7 @@ export class Composer {
     this.s = null;
     this.barCount = 0;
     this.leadOv = null;
+    this.leadProc = false;
     this.tempoFactor = null;
     this.tempoOv = null;
     this.curBpm = null;
@@ -76,10 +78,17 @@ export class Composer {
     this.leadOv = ov ? { lo: ov.lo, hi: ov.hi } : null;
   }
 
+  // Procedural lead: every place invents its own instrument (see instrument.js)
+  // and the melody stays in that instrument's register. Replaces a lead override.
+  setLeadProcedural(on) {
+    this.leadProc = !!on;
+  }
+
   info() {
     const s = this.s;
     if (!s) return null;
     return {
+      leadName: this.leadProc && s.instV ? s.instV.name : null,
       style: s.styleIdx,
       styleName: s.style.name,
       key: NOTE_NAMES[s.pc],
@@ -134,6 +143,10 @@ export class Composer {
     }
     s.bpm = style.bpm[0] + kr.below(style.bpm[1] - style.bpm[0] + 1);
 
+    // The place's own lead instrument (changes with the coarse cell, like style and key).
+    s.inst = makeInstrument(stream(seed.coarse, 901));
+    s.instV = s.inst;
+
     s.sectionBars = 8 * style.chordBars;
     this.s = s;
     this._newSection(full);
@@ -153,6 +166,7 @@ export class Composer {
     }
     if (!(s.sectionIdx > 0 && r.chance(0.5))) s.motifSeed = stream(secSeed, 3).next();
     s.answer = r.chance(0.6);
+    s.instV = morphInstrument(s.inst, stream(secSeed, 902));
 
     // Arrangement: which layers play in this section.
     const layers = {};
@@ -280,7 +294,7 @@ export class Composer {
     if (L.arp) this._planArp(steps, s, tones, j, hum);
 
     // ---- lead
-    if (L.lead || this.leadOv) this._planLead(steps, s, tones, j, jj, repeat, progLen, cb, lastBar);
+    if (L.lead || this.leadOv || this.leadProc) this._planLead(steps, s, tones, j, jj, repeat, progLen, cb, lastBar);
 
     // ---- drums
     if (L.drums && style.drums) this._planDrums(steps, s, j, lastBar, rr, hum);
@@ -299,7 +313,8 @@ export class Composer {
       chordDegree: degree,
       trim: style.trim || 1,
       duck: L.drums && style.drums ? 0.4 : 0,
-      layers: { ...L, lead: !!(L.lead || this.leadOv) },
+      layers: { ...L, lead: !!(L.lead || this.leadOv || this.leadProc) },
+      leadSynth: this.leadProc && !this.leadOv ? s.instV : null,
     };
     s.barInSection++;
     this.barCount++;
@@ -398,11 +413,19 @@ export class Composer {
     const key = repeat === 1 && jj === progLen - 1 && s.answer ? 99 : jj % (2 * cb);
     const r = stream(s.motifSeed, 31 * key + 7);
     let dens = Math.min(0.9, style.lead.density * s.densMul);
-    if (this.leadOv) dens = Math.max(dens, 0.26);
+    const forced = this.leadOv || this.leadProc;
+    if (forced) dens = Math.max(dens, 0.26);
     const mel = s.melScale;
     const origin = 48 + s.pc;
-    const lo = this.leadOv ? this.leadOv.lo : style.lead.lo || 62;
-    const hi = this.leadOv ? this.leadOv.hi : style.lead.hi || 88;
+    let lo = style.lead.lo || 62;
+    let hi = style.lead.hi || 88;
+    if (this.leadOv) {
+      lo = this.leadOv.lo;
+      hi = this.leadOv.hi;
+    } else if (this.leadProc) {
+      lo = s.instV.lo;
+      hi = s.instV.hi;
+    }
 
     // Chord tones across the lead register, as midi notes.
     const ctMidi = [];

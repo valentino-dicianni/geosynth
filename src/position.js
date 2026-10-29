@@ -1,13 +1,21 @@
 // Position sources: live GPS, manually entered coordinates, simulated walk.
 // Every fix goes through onFix -> speed estimate + seed -> engine.
-import { GeoSeeder, SpeedTracker } from './geo.js';
+import { GeoSeeder, SpeedTracker, M_PER_DEG } from './geo.js';
 import { $, fmtCoord, hex8, setStatus } from './dom.js';
 import { save } from './store.js';
 import { state } from './state.js';
 import { updateBanner } from './banner.js';
 import { sendSeed } from './audio.js';
 
-const M_PER_DEG = 111195;
+
+// Rate limits per source. GPS: while driving, a new style at most every 15 s
+// (walking crosses a ~250 m cell every few minutes, so it is never held back).
+// Manual: a chosen place applies at once. Demo: fast simulated movement, 3 s.
+const SEEDER_OPTS = {
+  gps: { minCoarseHoldMs: 15000 },
+  manual: { minFineHoldMs: 3000, fineAccuracyM: 1e9 },
+  demo: { minFineHoldMs: 3000, minCoarseHoldMs: 3000, fineAccuracyM: 1e9 },
+};
 
 function onFix(lat, lon, acc, gpsSpeed) {
   state.lastPos = { lat, lon, acc };
@@ -108,8 +116,7 @@ export function setSource(src, persist = true) {
   state.gpsFixAt = null;
   state.bannerNote = '';
   state.speed = new SpeedTracker();
-  state.seeder =
-    src === 'gps' ? new GeoSeeder() : new GeoSeeder({ minFineHoldMs: 3000, fineAccuracyM: 1e9 });
+  state.seeder = new GeoSeeder(SEEDER_OPTS[src]);
   for (const b of document.querySelectorAll('#source button')) {
     b.setAttribute('aria-checked', String(b.dataset.src === src));
   }

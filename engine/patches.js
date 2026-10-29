@@ -98,6 +98,7 @@ export const PATCHES = {
 
 // Instruments the user can pick for the lead line (null = the style decides).
 export const LEAD_INSTRUMENTS = [
+  { id: 'procedural', name: 'Procedural', patch: 'procedural', lo: 55, hi: 88 }, // invented per place (instrument.js)
   { id: 'auto', name: 'Auto', patch: null },
   { id: 'sax', name: 'Saxophone', patch: 'leadSax', lo: 55, hi: 81 },
   { id: 'flute', name: 'Flute', patch: 'leadFlute', lo: 67, hi: 96 },
