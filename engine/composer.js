@@ -15,6 +15,10 @@ import {
   NOTE_NAMES,
   MICRO_NAMES,
   MINOR_EXTRA,
+  ORIENT_PENT,
+  ORIENT_NAMES,
+  ORIENT_JP,
+  isScaleName,
   PENT_OK,
   SCALE_INFO,
   makeProceduralScale,
@@ -85,7 +89,7 @@ export class Composer {
   // Applies at the next bar line by re-latching the current place.
   setTone(key, scale, quarter) {
     const k = Number.isInteger(key) && key >= 0 && key < 12 ? key : -1;
-    const sc = scale === 'procedural' || (typeof scale === 'string' && Object.prototype.hasOwnProperty.call(SCALES, scale)) ? scale : 'auto';
+    const sc = scale === 'procedural' || isScaleName(scale) ? scale : 'auto';
     const q = quarter !== false;
     const t = this.tone;
     if (t.key === k && t.scale === sc && t.quarter === q) return;
@@ -167,16 +171,27 @@ export class Composer {
     const roll = tr.float();
     const microPick = MICRO_NAMES[tr.below(MICRO_NAMES.length)];
     const minorPick = MINOR_EXTRA[tr.below(MINOR_EXTRA.length)];
+    const orientSet = style.orientJp ? ORIENT_JP : ORIENT_NAMES;
+    const orientPick = orientSet[tr.below(orientSet.length)];
+    const orientP = style.orient || 0.12;
     let want = tone.scale;
     if (want === 'auto') {
       want = s.scaleName;
       if (roll < 0.22) want = 'procedural';
       else if (tone.quarter && roll < 0.38) want = microPick;
       else if (roll >= 0.38 && roll < 0.52 && SCALE_INFO[s.scaleName].mat === 'minor') want = minorPick;
+      else if (roll >= 0.52 && roll < 0.52 + orientP) want = orientPick;
     }
     s.scaleSteps = null;
     s.scaleInfo = SCALE_INFO[want];
-    if (want === 'procedural') {
+    let orientMel = null;
+    if (ORIENT_PENT[want]) {
+      // Five-note scale: chords from its parent mode, melody from the five notes.
+      s.scaleName = want;
+      s.scale = SCALES[ORIENT_PENT[want].parent];
+      s.scaleInfo = SCALE_INFO[ORIENT_PENT[want].parent];
+      orientMel = ORIENT_PENT[want].mel;
+    } else if (want === 'procedural') {
       const ps = makeProceduralScale(stream(seed.coarse, 904), tone.quarter);
       s.scaleName = 'procedural';
       s.scale = ps.scale;
@@ -186,7 +201,10 @@ export class Composer {
       s.scaleName = want;
       s.scale = SCALES[want];
     }
-    if (style.pent && PENT_OK.includes(s.scaleName)) {
+    s.orient = !!orientMel;
+    if (orientMel) {
+      s.melScale = orientMel;
+    } else if (style.pent && PENT_OK.includes(s.scaleName)) {
       const major = ['ionian', 'lydian', 'mixolydian'].includes(s.scaleName);
       s.melScale = major ? PENT.major : PENT.minor;
     } else {
@@ -482,6 +500,14 @@ export class Composer {
     // Chord tones across the lead register, as midi notes.
     const ctMidi = [];
     for (let o = -2; o <= 4; o++) for (const t of tones) ctMidi.push(origin + t + 12 * o);
+    if (s.orient) {
+      // Five-note scale: snap only to chord tones that belong to it, or to the
+      // scale's own notes when the chord has none.
+      const keep = ctMidi.filter((m) => mel.includes((((m - origin) % 12) + 12) % 12));
+      ctMidi.length = 0;
+      if (keep.length) ctMidi.push(...keep);
+      else for (let o = -2; o <= 4; o++) for (const t of mel) ctMidi.push(origin + t + 12 * o);
+    }
     const nearestChordTone = (m) => {
       let best = ctMidi[0];
       let bd = 1e9;

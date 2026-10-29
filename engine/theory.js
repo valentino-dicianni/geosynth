@@ -17,6 +17,10 @@ export const SCALES = {
   hungarianMinor: [0, 2, 3, 6, 7, 8, 11],
   ukrainianDorian: [0, 2, 3, 6, 7, 9, 10],
   locrian: [0, 1, 3, 5, 6, 8, 10],
+  // Oriental heptatonic scales (Arabic / Persian / Byzantine colour)
+  hijaz: [0, 1, 4, 5, 7, 8, 10],
+  doubleHarmonic: [0, 1, 4, 5, 7, 8, 11],
+  persian: [0, 1, 4, 5, 6, 8, 11],
   // Quarter-tone scales (maqam-like, 24-EDO): a .5 is a quarter tone, i.e. a
   // pitch halfway between two piano keys.
   rast: [0, 2, 3.5, 5, 7, 9, 10.5],
@@ -24,6 +28,29 @@ export const SCALES = {
   saba: [0, 1.5, 3, 4, 6, 8, 10],
   neutral: [0, 2, 3.5, 5, 7, 8.5, 10.5],
 };
+
+// Five-note oriental scales (Japanese and Chinese). The melody uses the five
+// notes (`mel`); chords are built on the 7-note `parent` mode that contains
+// them, so the harmony stays consistent with the melody.
+export const ORIENT_PENT = {
+  hirajoshi: { parent: 'aeolian', mel: [0, 2, 3, 7, 8] },
+  inSen: { parent: 'phrygian', mel: [0, 1, 5, 7, 10] },
+  miyako: { parent: 'phrygian', mel: [0, 1, 5, 7, 8] },
+  yo: { parent: 'dorian', mel: [0, 2, 5, 7, 9] },
+  kumoi: { parent: 'dorian', mel: [0, 2, 3, 7, 9] },
+  iwato: { parent: 'locrian', mel: [0, 1, 5, 6, 10] },
+  ryukyu: { parent: 'ionian', mel: [0, 4, 5, 7, 11] },
+  gong: { parent: 'ionian', mel: [0, 2, 4, 7, 9] },
+};
+
+// What Auto picks from in an "oriental" roll: all of them, or Japanese only.
+export const ORIENT_NAMES = [...Object.keys(ORIENT_PENT), 'hijaz', 'doubleHarmonic', 'persian'];
+export const ORIENT_JP = ['hirajoshi', 'inSen', 'miyako', 'yo', 'kumoi', 'ryukyu'];
+
+// True for any scale name the app knows (7-note modes and the five-note ones).
+export function isScaleName(name) {
+  return typeof name === 'string' && (Object.prototype.hasOwnProperty.call(SCALES, name) || Object.prototype.hasOwnProperty.call(ORIENT_PENT, name));
+}
 
 // The extra minor-side scales above; Auto uses them only where the style's
 // own mode is minor, so major-leaning places stay major.
@@ -61,6 +88,9 @@ export const SCALE_INFO = {
   hungarianMinor: { mat: 'minor', favor: { 3: 1.8, 4: 1.4 } },
   ukrainianDorian: { mat: 'minor', favor: { 3: 2.0 } },
   locrian: { mat: 'minor', favor: { 4: 2.0 } },
+  hijaz: { mat: 'major', favor: { 1: 2.4, 5: 1.3 } },
+  doubleHarmonic: { mat: 'major', favor: { 1: 2.2, 5: 1.4 } },
+  persian: { mat: 'major', favor: { 1: 2.0, 4: 1.4 } },
   rast: { mat: 'major', favor: { 3: 1.6 } },
   bayati: { mat: 'minor', favor: { 1: 1.6 } },
   saba: { mat: 'minor', favor: { 1: 2.2 } },
@@ -459,5 +489,30 @@ export const STYLES = [
     swing: 0,
     fx: { delayBeats: 0.75, delayFb: 0.4, delayMix: 0.18, reverbMix: 0.14, reverbSize: 0.65 },
     bright: [0.45, 1.0],
+  },
+  {
+    id: 'anime',
+    trim: 1.1,
+    name: 'Anime',
+    blurb: 'anime opening: bright, fast, soaring melody, sometimes Japanese scales',
+    bpm: [156, 176],
+    scales: ['ionian', 'lydian', 'mixolydian'],
+    pent: false,
+    orient: 0.3, // share of places that get a Japanese scale (default styles: 0.12)
+    orientJp: true,
+    chordBars: 1,
+    stay: 0.05,
+    sevenths: 0.2,
+    sus: 0.12,
+    starts: [3, 4, 0, 5], // IV V I vi: the "royal road" openings
+    patches: { pad: 'padStrings', bass: 'bassPulse', arp: 'arpPluck', lead: 'leadFM' },
+    layerProb: { pad: 0.85, bass: 0.9, arp: 0.9, lead: 0.85, drums: 0.95 },
+    bass: { mode: 'octave' },
+    arp: { mode: 'updown', rate: 2, octaves: 2, vel: 0.46, gate: 0.8 },
+    lead: { density: 0.36, vel: 0.72, minGap: 1, lo: 64, hi: 90 },
+    drums: { kick: 'x.....x...x.x...', snare: '....x.......x...', hat: 'eighth', ghost: 0.12, level: 0.95 },
+    swing: 0,
+    fx: { delayBeats: 0.75, delayFb: 0.3, delayMix: 0.16, reverbMix: 0.26, reverbSize: 0.8 },
+    bright: [0.6, 1.0],
   },
 ];

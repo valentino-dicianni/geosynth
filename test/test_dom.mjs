@@ -54,12 +54,13 @@ const ok = (name) => console.log('  ok  ', ++n, name);
 await import(pathToFileURL(ROOT + '/src/main.js').href);
 const state = w.__geosynth;
 
-assert.equal($('styleChips').children.length, 11);
+assert.equal($('styleChips').children.length, 12);
 assert.equal($('leadChips').children.length, 9);
 assert.equal($('presets').children.length, 7);
 assert.equal($('player').hidden, true);
 assert.ok([...$('styleChips').children].some((b) => b.textContent === 'Techno'));
-ok('init builds 11 style chips (Auto + 10, incl. Techno), 9 lead instruments (incl. Procedural) and 7 presets; player hidden');
+ assert.ok([...$('styleChips').children].some((b) => b.textContent === 'Anime'));
+ok('init builds 12 style chips (Auto + 11, incl. Techno and Anime), 9 lead instruments (incl. Procedural) and 7 presets; player hidden');
 
 const banner = () => ({ mode: $('posBanner').dataset.gps, title: $('bannerTitle').textContent, detail: $('bannerDetail').textContent });
 assert.deepEqual([banner().mode, banner().title], ['wait', 'GPS selected']);
@@ -264,7 +265,9 @@ ok('volume and audio-route controls work');
   const tones = () => log.messages.filter((m) => m.type === 'tone');
   assert.deepEqual(tones().at(0), { type: 'tone', key: -1, scale: 'auto', quarter: true }, 'start sends the default tonality');
   assert.equal($('keyChips').children.length, 13);
-  assert.ok($('scaleChips').children.length >= 13);
+  assert.ok($('scaleChips').children.length >= 30);
+  assert.ok([...$('scaleChips').children].some((b) => b.textContent === 'hirajoshi' && b.dataset.v === 'hirajoshi'));
+  assert.ok([...$('scaleChips').children].some((b) => b.textContent === 'hijaz'));
   assert.ok([...$('scaleChips').children].some((b) => b.textContent === 'rast ½' && b.dataset.v === 'rast'));
   w.document.querySelector('#keyChips [data-v="9"]').click();
   w.document.querySelector('#scaleChips [data-v="bayati"]').click();

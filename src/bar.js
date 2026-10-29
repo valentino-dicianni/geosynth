@@ -4,7 +4,7 @@ import { state } from './state.js';
 import { showBpm } from './tempo.js';
 import { scaleLabel } from '../engine/theory.js';
 
-const HUES = [200, 320, 275, 170, 235, 50, 25, 355, 95, 140]; // one per style, in STYLES order
+const HUES = [200, 320, 275, 170, 235, 50, 25, 355, 95, 140, 340]; // one per style, in STYLES order
 
 export function onWorkletMessage(ev) {
   const m = ev.data;

@@ -110,6 +110,10 @@ const SCALES = {
   hungarianMinor: [0, 2, 3, 6, 7, 8, 11],
   ukrainianDorian: [0, 2, 3, 6, 7, 9, 10],
   locrian: [0, 1, 3, 5, 6, 8, 10],
+  // Oriental heptatonic scales (Arabic / Persian / Byzantine colour)
+  hijaz: [0, 1, 4, 5, 7, 8, 10],
+  doubleHarmonic: [0, 1, 4, 5, 7, 8, 11],
+  persian: [0, 1, 4, 5, 6, 8, 11],
   // Quarter-tone scales (maqam-like, 24-EDO): a .5 is a quarter tone, i.e. a
   // pitch halfway between two piano keys.
   rast: [0, 2, 3.5, 5, 7, 9, 10.5],
@@ -117,6 +121,29 @@ const SCALES = {
   saba: [0, 1.5, 3, 4, 6, 8, 10],
   neutral: [0, 2, 3.5, 5, 7, 8.5, 10.5],
 };
+
+// Five-note oriental scales (Japanese and Chinese). The melody uses the five
+// notes (`mel`); chords are built on the 7-note `parent` mode that contains
+// them, so the harmony stays consistent with the melody.
+const ORIENT_PENT = {
+  hirajoshi: { parent: 'aeolian', mel: [0, 2, 3, 7, 8] },
+  inSen: { parent: 'phrygian', mel: [0, 1, 5, 7, 10] },
+  miyako: { parent: 'phrygian', mel: [0, 1, 5, 7, 8] },
+  yo: { parent: 'dorian', mel: [0, 2, 5, 7, 9] },
+  kumoi: { parent: 'dorian', mel: [0, 2, 3, 7, 9] },
+  iwato: { parent: 'locrian', mel: [0, 1, 5, 6, 10] },
+  ryukyu: { parent: 'ionian', mel: [0, 4, 5, 7, 11] },
+  gong: { parent: 'ionian', mel: [0, 2, 4, 7, 9] },
+};
+
+// What Auto picks from in an "oriental" roll: all of them, or Japanese only.
+const ORIENT_NAMES = [...Object.keys(ORIENT_PENT), 'hijaz', 'doubleHarmonic', 'persian'];
+const ORIENT_JP = ['hirajoshi', 'inSen', 'miyako', 'yo', 'kumoi', 'ryukyu'];
+
+// True for any scale name the app knows (7-note modes and the five-note ones).
+function isScaleName(name) {
+  return typeof name === 'string' && (Object.prototype.hasOwnProperty.call(SCALES, name) || Object.prototype.hasOwnProperty.call(ORIENT_PENT, name));
+}
 
 // The extra minor-side scales above; Auto uses them only where the style's
 // own mode is minor, so major-leaning places stay major.
@@ -154,6 +181,9 @@ const SCALE_INFO = {
   hungarianMinor: { mat: 'minor', favor: { 3: 1.8, 4: 1.4 } },
   ukrainianDorian: { mat: 'minor', favor: { 3: 2.0 } },
   locrian: { mat: 'minor', favor: { 4: 2.0 } },
+  hijaz: { mat: 'major', favor: { 1: 2.4, 5: 1.3 } },
+  doubleHarmonic: { mat: 'major', favor: { 1: 2.2, 5: 1.4 } },
+  persian: { mat: 'major', favor: { 1: 2.0, 4: 1.4 } },
   rast: { mat: 'major', favor: { 3: 1.6 } },
   bayati: { mat: 'minor', favor: { 1: 1.6 } },
   saba: { mat: 'minor', favor: { 1: 2.2 } },
@@ -552,6 +582,31 @@ const STYLES = [
     swing: 0,
     fx: { delayBeats: 0.75, delayFb: 0.4, delayMix: 0.18, reverbMix: 0.14, reverbSize: 0.65 },
     bright: [0.45, 1.0],
+  },
+  {
+    id: 'anime',
+    trim: 1.1,
+    name: 'Anime',
+    blurb: 'anime opening: bright, fast, soaring melody, sometimes Japanese scales',
+    bpm: [156, 176],
+    scales: ['ionian', 'lydian', 'mixolydian'],
+    pent: false,
+    orient: 0.3, // share of places that get a Japanese scale (default styles: 0.12)
+    orientJp: true,
+    chordBars: 1,
+    stay: 0.05,
+    sevenths: 0.2,
+    sus: 0.12,
+    starts: [3, 4, 0, 5], // IV V I vi: the "royal road" openings
+    patches: { pad: 'padStrings', bass: 'bassPulse', arp: 'arpPluck', lead: 'leadFM' },
+    layerProb: { pad: 0.85, bass: 0.9, arp: 0.9, lead: 0.85, drums: 0.95 },
+    bass: { mode: 'octave' },
+    arp: { mode: 'updown', rate: 2, octaves: 2, vel: 0.46, gate: 0.8 },
+    lead: { density: 0.36, vel: 0.72, minGap: 1, lo: 64, hi: 90 },
+    drums: { kick: 'x.....x...x.x...', snare: '....x.......x...', hat: 'eighth', ghost: 0.12, level: 0.95 },
+    swing: 0,
+    fx: { delayBeats: 0.75, delayFb: 0.3, delayMix: 0.16, reverbMix: 0.26, reverbSize: 0.8 },
+    bright: [0.6, 1.0],
   },
 ];
 
@@ -1372,7 +1427,7 @@ class Composer {
   // Applies at the next bar line by re-latching the current place.
   setTone(key, scale, quarter) {
     const k = Number.isInteger(key) && key >= 0 && key < 12 ? key : -1;
-    const sc = scale === 'procedural' || (typeof scale === 'string' && Object.prototype.hasOwnProperty.call(SCALES, scale)) ? scale : 'auto';
+    const sc = scale === 'procedural' || isScaleName(scale) ? scale : 'auto';
     const q = quarter !== false;
     const t = this.tone;
     if (t.key === k && t.scale === sc && t.quarter === q) return;
@@ -1454,16 +1509,27 @@ class Composer {
     const roll = tr.float();
     const microPick = MICRO_NAMES[tr.below(MICRO_NAMES.length)];
     const minorPick = MINOR_EXTRA[tr.below(MINOR_EXTRA.length)];
+    const orientSet = style.orientJp ? ORIENT_JP : ORIENT_NAMES;
+    const orientPick = orientSet[tr.below(orientSet.length)];
+    const orientP = style.orient || 0.12;
     let want = tone.scale;
     if (want === 'auto') {
       want = s.scaleName;
       if (roll < 0.22) want = 'procedural';
       else if (tone.quarter && roll < 0.38) want = microPick;
       else if (roll >= 0.38 && roll < 0.52 && SCALE_INFO[s.scaleName].mat === 'minor') want = minorPick;
+      else if (roll >= 0.52 && roll < 0.52 + orientP) want = orientPick;
     }
     s.scaleSteps = null;
     s.scaleInfo = SCALE_INFO[want];
-    if (want === 'procedural') {
+    let orientMel = null;
+    if (ORIENT_PENT[want]) {
+      // Five-note scale: chords from its parent mode, melody from the five notes.
+      s.scaleName = want;
+      s.scale = SCALES[ORIENT_PENT[want].parent];
+      s.scaleInfo = SCALE_INFO[ORIENT_PENT[want].parent];
+      orientMel = ORIENT_PENT[want].mel;
+    } else if (want === 'procedural') {
       const ps = makeProceduralScale(stream(seed.coarse, 904), tone.quarter);
       s.scaleName = 'procedural';
       s.scale = ps.scale;
@@ -1473,7 +1539,10 @@ class Composer {
       s.scaleName = want;
       s.scale = SCALES[want];
     }
-    if (style.pent && PENT_OK.includes(s.scaleName)) {
+    s.orient = !!orientMel;
+    if (orientMel) {
+      s.melScale = orientMel;
+    } else if (style.pent && PENT_OK.includes(s.scaleName)) {
       const major = ['ionian', 'lydian', 'mixolydian'].includes(s.scaleName);
       s.melScale = major ? PENT.major : PENT.minor;
     } else {
@@ -1769,6 +1838,14 @@ class Composer {
     // Chord tones across the lead register, as midi notes.
     const ctMidi = [];
     for (let o = -2; o <= 4; o++) for (const t of tones) ctMidi.push(origin + t + 12 * o);
+    if (s.orient) {
+      // Five-note scale: snap only to chord tones that belong to it, or to the
+      // scale's own notes when the chord has none.
+      const keep = ctMidi.filter((m) => mel.includes((((m - origin) % 12) + 12) % 12));
+      ctMidi.length = 0;
+      if (keep.length) ctMidi.push(...keep);
+      else for (let o = -2; o <= 4; o++) for (const t of mel) ctMidi.push(origin + t + 12 * o);
+    }
     const nearestChordTone = (m) => {
       let best = ctMidi[0];
       let bd = 1e9;

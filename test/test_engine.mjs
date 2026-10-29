@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { Engine } from '../engine/engine.js';
 import { Composer } from '../engine/composer.js';
-import { STYLES, MICRO_NAMES, MINOR_EXTRA, SCALES, SCALE_INFO, scaleLabel, makeProceduralScale } from '../engine/theory.js';
+import { STYLES, ORIENT_PENT, ORIENT_NAMES, ORIENT_JP, MICRO_NAMES, MINOR_EXTRA, SCALES, SCALE_INFO, scaleLabel, makeProceduralScale } from '../engine/theory.js';
 import { PATCHES, LEAD_INSTRUMENTS } from '../engine/patches.js';
 import { SynthVoice } from '../engine/voices.js';
 import { makeInstrument } from '../engine/instrument.js';
@@ -485,6 +485,82 @@ check('extra minor scales: Auto uses them only in minor-mode places, every one a
     assert.ok(st.peak <= 1.0 && st.rmsDb > -38 && st.rmsDb < -8, `${name}: peak ${st.peak} rms ${st.rmsDb}`);
     assert.equal(e.composer.info().scale, name);
   }
+});
+
+check('oriental scales: five-note melodies sit inside their parent mode, heptatonic ones are valid', () => {
+  assert.equal(Object.keys(ORIENT_PENT).length, 8);
+  for (const [name, o] of Object.entries(ORIENT_PENT)) {
+    assert.equal(o.mel.length, 5, name);
+    assert.equal(o.mel[0], 0);
+    for (const x of o.mel) assert.ok(SCALES[o.parent].includes(x), `${name}: ${x} not in ${o.parent}`);
+    assert.ok(SCALE_INFO[o.parent]);
+  }
+  for (const n of ['hijaz', 'doubleHarmonic', 'persian']) assert.equal(SCALES[n].length, 7);
+  assert.ok(ORIENT_JP.every((n) => ORIENT_PENT[n]));
+  assert.ok(ORIENT_NAMES.length === 11 && ORIENT_JP.length === 6);
+  assert.equal(scaleLabel('inSen'), 'in sen');
+  assert.equal(scaleLabel('doubleHarmonic'), 'double harmonic');
+});
+
+check('oriental scales: chosen by hand the melody uses only the five notes; Auto gives Anime many Japanese scales', () => {
+  for (const name of Object.keys(ORIENT_PENT)) {
+    const c = new Composer();
+    c.setTone(0, name, true);
+    c.setSeed({ style: 4, coarse: 55, fine: 2 });
+    c.setLeadProcedural(false);
+    c.setLeadOverride({ lo: 60, hi: 90 });
+    let leads = 0;
+    for (let b = 0; b < 24; b++) {
+      const plan = c.nextBar();
+      for (const st of plan.steps) for (const e of st) if (e.voice === 'lead') {
+        leads++;
+        const pc = ((e.note % 12) + 12) % 12; // key is C, so pitch class = scale degree in semitones
+        assert.ok(ORIENT_PENT[name].mel.includes(pc), `${name}: lead note ${e.note} (pc ${pc}) outside ${ORIENT_PENT[name].mel}`);
+      }
+    }
+    assert.ok(leads >= 8, name + ' lead notes: ' + leads);
+    assert.equal(c.info().scale, name);
+  }
+  const anime = STYLES.findIndex((x) => x.id === 'anime');
+  assert.ok(anime >= 0);
+  let jp = 0;
+  const N = 400;
+  for (let n = 0; n < N; n++) {
+    const c = new Composer();
+    c.setSeed({ style: anime, coarse: n * 7919 + 13, fine: 1 });
+    c.nextBar();
+    if (ORIENT_JP.includes(c.info().scale)) jp++;
+  }
+  assert.ok(jp > N * 0.2 && jp < N * 0.45, 'Japanese scales in Anime: ' + jp);
+  let other = 0;
+  for (let n = 0; n < N; n++) {
+    const c = new Composer();
+    c.setSeed({ style: 2, coarse: n * 7919 + 13, fine: 1 });
+    c.nextBar();
+    if (ORIENT_NAMES.includes(c.info().scale)) other++;
+  }
+  assert.ok(other > N * 0.06 && other < N * 0.2, 'oriental scales in other styles: ' + other);
+});
+
+check('Anime style: fast, bright, backbeat drums, lead and bass present, lead in its register', () => {
+  const si = STYLES.findIndex((x) => x.id === 'anime');
+  const st = STYLES[si];
+  assert.ok(st.bpm[0] >= 150 && st.bpm[1] <= 180);
+  const c = new Composer();
+  c.setSeed({ style: si, coarse: 8, fine: 8 });
+  let leads = 0, snares = 0, kicks = 0, bars = 0;
+  for (let b = 0; b < 32; b++) {
+    const plan = c.nextBar();
+    bars++;
+    assert.ok(plan.bpm >= 150 && plan.bpm <= 185, 'bpm ' + plan.bpm);
+    for (const stp of plan.steps) for (const e of stp) {
+      if (e.voice === 'lead') { leads++; assert.ok(e.note >= 64 - 12 && e.note <= 90 + 12); }
+      if (e.voice === 'snare') snares++;
+      if (e.voice === 'kick') kicks++;
+    }
+  }
+  assert.ok(leads > 40, 'lead notes ' + leads);
+  assert.ok(snares >= bars && kicks >= bars * 2, `snares ${snares} kicks ${kicks}`);
 });
 
 check('quarter-tone scales: 7 ascending notes inside one octave, with .5 steps', () => {

@@ -27,8 +27,9 @@ GPS fix -> GeoSeeder (src/geo.js)
   music constantly. Poor accuracy (> 400 m) freezes the fine seed.
 - **New seeds latch on the next bar line.** Old notes ring out; tempo, filter
   and effects glide.
-- **10 styles:** Drift, Neon, Pulse (house), Glass, Abyss, Arcade, Chill, Epic, Smoke
-  (late-night jazz) and Techno (kick on every beat, 16th hats, a 16-step acid
+- **11 styles:** Drift, Neon, Pulse (house), Glass, Abyss, Arcade, Chill, Epic, Smoke
+  (late-night jazz), Anime (bright, 156-176 bpm, soaring lead, IV-V-I-vi openings, often a Japanese
+  scale) and Techno (kick on every beat, 16th hats, a 16-step acid
   bass line in the gaps, 128-146 bpm). "Auto" lets the coarse cell choose; or pin one by hand. Each song is built from
   sections (8 or 16 bars) with Markov chord progressions, motif-based leads
   that follow the chords, and a layer arrangement that changes per section.
@@ -161,15 +162,19 @@ The version (major.minor) lives in `src/version.js` and shows in the footer. Run
 - **Place:** GPS, Manual (type coordinates or tap a city preset), or Demo walk
   (simulated movement at walking up to flight speed, to hear how the music
   changes). **Hold** freezes the music while you move.
-- **Style:** Auto or pin one of the ten.
+- **Style:** Auto or pin one of the eleven.
 - **Key and scale:** Auto, or fix the key (C to B) and/or the scale. Besides the
   usual modes (ionian to locrian, harmonic and melodic minor) there are more minor-side scales
-  (dorian b2, neapolitan minor, hungarian minor, ukrainian dorian, locrian) and four quarter-tone scales (rast, bayati, saba, neutral;
+  (dorian b2, neapolitan minor, hungarian minor, ukrainian dorian, locrian), oriental scales
+  (hijaz, double harmonic, persian, and the five-note hirajoshi, in sen, miyako, yo, kumoi, iwato, ryukyu and
+  Chinese gong: the melody uses the five notes, the chords come from the 7-note mode that contains them)
+  and four quarter-tone scales (rast, bayati, saba, neutral;
   the ½ marks them) and **Procedural**: a 7-note scale invented from the place
   seed. The **Quarter tones** switch lets Auto and Procedural use notes halfway
   between piano keys (24 steps per octave); without it they stay on whole
   semitones. In Auto about a fifth of the places get a procedural scale and
-  about a sixth a quarter-tone one; places whose style is in a minor mode also
+  about a sixth a quarter-tone one, about an eighth an oriental one (three in
+  ten in Anime, where it is always Japanese); places whose style is in a minor mode also
   get the extra minor scales now and then.
 - **Manual map:** in Manual mode tap the map to choose the place (drag to move,
   pinch or +/- to zoom). It needs a network for the tiles; without one the map
