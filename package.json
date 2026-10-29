@@ -1,12 +1,12 @@
 {
   "name": "geosynth",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "private": true,
   "type": "module",
   "description": "Endless procedural synth music seeded by GPS position (PWA, Web Audio AudioWorklet).",
   "scripts": {
     "build": "node tools/build.mjs",
-    "test": "node tools/build.mjs && node test/test_geo.mjs && node test/test_engine.mjs && node test/test_bundle.mjs",
+    "test": "node tools/build.mjs && node test/test_geo.mjs && node test/test_engine.mjs && node test/test_map.mjs && node test/test_bundle.mjs",
     "build:single": "node tools/build.mjs && node tools/build-single.mjs",
     "bump": "node tools/bump.mjs",
     "release": "node tools/bump.mjs && node tools/build.mjs && node tools/build-single.mjs",

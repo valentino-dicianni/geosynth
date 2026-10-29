@@ -69,6 +69,17 @@
         <div id="cellText" class="mono dim"></div>
 
         <div id="manualPanel" hidden>
+          <div id="map" class="map" aria-label="Map: tap to choose a place">
+            <div id="mapTiles" class="map-tiles"></div>
+            <div id="mapPin" class="map-pin" hidden></div>
+            <div class="map-zoom">
+              <button id="mapIn" type="button" aria-label="Zoom in">+</button>
+              <button id="mapOut" type="button" aria-label="Zoom out">&minus;</button>
+            </div>
+            <div id="mapNote" class="map-note" hidden>Map tiles could not be loaded (offline?). Tapping still picks a place.</div>
+            <a class="map-credit" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">&copy; OpenStreetMap</a>
+          </div>
+          <p class="note">Tap the map to choose the place. Drag to move, pinch or +/- to zoom. One style area is about 250 m wide, so zoom in to hear the difference between streets.</p>
           <div class="row">
             <label>Lat <input id="latIn" inputmode="decimal" value="47.3769"></label>
             <label>Lon <input id="lonIn" inputmode="decimal" value="8.5417"></label>
@@ -104,6 +115,17 @@
         <h2>Style</h2>
         <div id="styleChips" class="chips"></div>
         <p class="note">Auto lets the location choose among the ten styles.</p>
+      </div>
+
+      <div class="card">
+        <h2>Key and scale</h2>
+        <div id="keyChips" class="chips" aria-label="Key"></div>
+        <div id="scaleChips" class="chips" aria-label="Scale"></div>
+        <label class="check"><input id="quarter" type="checkbox" checked> Quarter tones (notes between the piano keys) in Auto and Procedural</label>
+        <p id="toneNow" class="note mono"></p>
+        <p class="note">Auto lets the place choose: usually the style's own modes, sometimes a quarter-tone scale
+          (rast, bayati, saba, neutral) or a Procedural scale invented for that spot. Pick a key or scale to fix it.
+          Scales marked ½ always contain quarter tones.</p>
       </div>
 
       <div class="card">

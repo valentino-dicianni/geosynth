@@ -25,6 +25,7 @@ class GeoSynthProcessor extends AudioWorkletProcessor {
       else if (m.type === 'volume') this.engine.setVolume(m.value);
       else if (m.type === 'tempo') this.engine.setTempoFactor(m.factor);
       else if (m.type === 'bpm') this.engine.setTempoOverride(m.bpm);
+      else if (m.type === 'tone') this.engine.setTone(m.key, m.scale, m.quarter);
       else if (m.type === 'lead') this.engine.setLeadPatch(m.patch, m.lo, m.hi);
     };
     this.port.postMessage({ type: 'ready', sampleRate });

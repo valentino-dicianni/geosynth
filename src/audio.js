@@ -69,6 +69,7 @@ async function createEngineNode(ctx) {
       else if (m.type === 'volume') engine.setVolume(m.value);
       else if (m.type === 'tempo') engine.setTempoFactor(m.factor);
       else if (m.type === 'bpm') engine.setTempoOverride(m.bpm);
+      else if (m.type === 'tone') engine.setTone(m.key, m.scale, m.quarter);
       else if (m.type === 'lead') engine.setLeadPatch(m.patch, m.lo, m.hi);
     },
   };

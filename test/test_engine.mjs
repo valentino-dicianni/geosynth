@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { Engine } from '../engine/engine.js';
 import { Composer } from '../engine/composer.js';
-import { STYLES } from '../engine/theory.js';
+import { STYLES, MICRO_NAMES, SCALES, makeProceduralScale } from '../engine/theory.js';
 import { PATCHES, LEAD_INSTRUMENTS } from '../engine/patches.js';
 import { SynthVoice } from '../engine/voices.js';
 import { makeInstrument } from '../engine/instrument.js';
@@ -447,6 +447,112 @@ check('engine: Procedural / named lead / Auto switch each other off, and procedu
     en.setLeadPatch('procedural');
     const { L, R } = render(en, 20);
     const st = stats(L, R, SR * 2, 20 * SR);
+    assert.equal(st.bad, 0);
+    assert.ok(st.peak <= 1.0 && st.rmsDb > -38 && st.rmsDb < -8, `${STYLES[si].name}: peak ${st.peak} rms ${st.rmsDb}`);
+  }
+});
+
+check('quarter-tone scales: 7 ascending notes inside one octave, with .5 steps', () => {
+  assert.deepEqual(MICRO_NAMES, ['rast', 'bayati', 'saba', 'neutral']);
+  for (const n of MICRO_NAMES) {
+    const sc = SCALES[n];
+    assert.equal(sc.length, 7);
+    assert.equal(sc[0], 0);
+    assert.ok(sc.some((x) => x !== Math.floor(x)), n + ' has a quarter tone');
+    for (let i = 1; i < 7; i++) assert.ok(sc[i] > sc[i - 1] && sc[i] < 12 && (sc[i] * 2) % 1 === 0);
+  }
+});
+
+check('procedural scale: octave of 7 steps, usable tonic triad, quarter tones only when allowed, deterministic', () => {
+  let anyMicro = false;
+  const seen = new Set();
+  for (const quarter of [true, false]) {
+    for (let n = 0; n < 200; n++) {
+      const a = makeProceduralScale(stream(n * 31 + 5, 904), quarter);
+      const b = makeProceduralScale(stream(n * 31 + 5, 904), quarter);
+      assert.equal(JSON.stringify(a), JSON.stringify(b));
+      assert.equal(a.steps.length, 7);
+      assert.equal(a.steps.reduce((x, y) => x + y), 12);
+      assert.equal(a.scale.length, 7);
+      assert.ok(a.steps.every((x) => x >= 1 && x <= 3));
+      const third = a.scale[2];
+      const fifth = a.scale[4];
+      assert.ok(third >= 3 && third <= 4 && fifth >= 6.5 && fifth <= 7.5, `third ${third} fifth ${fifth}`);
+      const micro = a.scale.some((x) => x !== Math.floor(x));
+      if (!quarter) assert.ok(!micro, 'whole semitones only');
+      if (quarter) assert.ok(micro, 'quarter tones on: at least one quarter tone');
+      if (quarter && micro) anyMicro = true;
+      seen.add(JSON.stringify(a.steps) + quarter);
+    }
+  }
+  assert.ok(anyMicro);
+  assert.ok(seen.size > 100, 'many different scales: ' + seen.size);
+});
+
+check('composer tonality: manual key and scale are honoured, Auto mixes in procedural and quarter-tone scales, changes apply at the next bar', () => {
+  const c = new Composer();
+  c.setTone(9, 'bayati', true);
+  c.setSeed({ style: 3, coarse: 42, fine: 1 });
+  c.nextBar();
+  let i = c.info();
+  assert.deepEqual([i.key, i.scale, i.micro], ['A', 'bayati', true]);
+  c.setTone(2, 'dorian', true);
+  assert.ok(c.hasPending(), 're-latch requested');
+  c.nextBar();
+  i = c.info();
+  assert.deepEqual([i.key, i.scale, i.micro], ['D', 'dorian', false]);
+  c.setTone(-1, 'procedural', false);
+  c.nextBar();
+  i = c.info();
+  assert.equal(i.scale, 'procedural');
+  assert.equal(i.micro, false);
+  assert.equal(i.scaleSteps.length, 7);
+  const kinds = {};
+  let micro = 0;
+  const N = 300;
+  for (let n = 0; n < N; n++) {
+    const a = new Composer();
+    a.setSeed({ style: -1, coarse: n * 7919 + 1, fine: 3 });
+    a.nextBar();
+    const inf = a.info();
+    kinds[inf.scale] = (kinds[inf.scale] || 0) + 1;
+    if (inf.micro) micro++;
+  }
+  assert.ok(kinds.procedural > N * 0.12 && kinds.procedural < N * 0.35, 'procedural share ' + kinds.procedural);
+  assert.ok(micro > N * 0.2 && micro < N * 0.5, 'quarter-tone share ' + micro);
+  for (const n of MICRO_NAMES) assert.ok(kinds[n] > 0, n + ' appears in Auto');
+  let microOff = 0;
+  for (let n = 0; n < N; n++) {
+    const a = new Composer();
+    a.setTone(-1, 'auto', false);
+    a.setSeed({ style: -1, coarse: n * 7919 + 1, fine: 3 });
+    a.nextBar();
+    if (a.info().micro) microOff++;
+  }
+  assert.equal(microOff, 0, 'no quarter tones when switched off (Auto)');
+});
+
+check('quarter-tone music: lead and chord notes stay in range, include half-semitone pitches, and render finite audible audio in every style', () => {
+  for (let si = 0; si < STYLES.length; si++) {
+    const e = new Engine(SR);
+    e.setTone(-1, MICRO_NAMES[si % 4], true);
+    e.setSeed({ style: si, coarse: 321 + si, fine: 9 });
+    e.setLeadPatch('procedural');
+    const c = new Composer();
+    c.setTone(-1, MICRO_NAMES[si % 4], true);
+    c.setSeed({ style: si, coarse: 321 + si, fine: 9 });
+    c.setLeadProcedural(true);
+    let half = 0;
+    for (let b = 0; b < 48; b++) {
+      const plan = c.nextBar();
+      for (const st of plan.steps) for (const ev of st) {
+        assert.ok(Number.isFinite(ev.note));
+        if (ev.voice !== 'kick' && ev.voice !== 'snare' && ev.voice !== 'hat' && ev.voice !== 'tom' && ev.note !== Math.floor(ev.note)) half++;
+      }
+    }
+    assert.ok(half >= 6, `${STYLES[si].name}: ${half} quarter-tone notes`);
+    const { L, R } = render(e, 16);
+    const st = stats(L, R, SR * 2, 16 * SR);
     assert.equal(st.bad, 0);
     assert.ok(st.peak <= 1.0 && st.rmsDb > -38 && st.rmsDb < -8, `${STYLES[si].name}: peak ${st.peak} rms ${st.rmsDb}`);
   }

@@ -51,6 +51,16 @@ Each section morphs it slightly. Its loudness is matched by a short probe
 render, so every generated instrument sits at the same level. The app shows
 the current one ("Instrument here: ...").
 
+## Quarter tones and procedural scales
+
+Notes are plain fractional MIDI numbers, so a quarter tone is a .5. The four
+named quarter-tone scales are maqam-like 7-note scales with neutral thirds,
+sixths or sevenths. A procedural scale (`makeProceduralScale` in
+`engine/theory.js`) picks seven steps of 1 to 3 semitones (in quarter-tone
+units when allowed) that add up to an octave, and keeps the tonic triad
+usable: third between a minor and a major third, fifth within a quarter tone of
+perfect. It also decides whether the chord matrix is major or minor.
+
 ## Tempo follows movement
 
 Tempo follows how fast your position is changing, in every mode: GPS (the
@@ -152,6 +162,17 @@ The version (major.minor) lives in `src/version.js` and shows in the footer. Run
   (simulated movement at walking up to flight speed, to hear how the music
   changes). **Hold** freezes the music while you move.
 - **Style:** Auto or pin one of the ten.
+- **Key and scale:** Auto, or fix the key (C to B) and/or the scale. Besides the
+  usual modes there are four quarter-tone scales (rast, bayati, saba, neutral;
+  the ½ marks them) and **Procedural**: a 7-note scale invented from the place
+  seed. The **Quarter tones** switch lets Auto and Procedural use notes halfway
+  between piano keys (24 steps per octave); without it they stay on whole
+  semitones. In Auto about a fifth of the places get a procedural scale and
+  about a sixth a quarter-tone one.
+- **Manual map:** in Manual mode tap the map to choose the place (drag to move,
+  pinch or +/- to zoom). It needs a network for the tiles; without one the map
+  stays blank but tapping still works, and so do the Lat/Lon boxes and city
+  presets.
 - Keep the screen on is enabled by default because browsers stop delivering GPS
   to a hidden page.
 
@@ -188,6 +209,7 @@ Offline render speed is 27x-80x real time on a desktop core.
 | `src/state.js`, `dom.js`, `store.js` | shared state, DOM helpers, saved settings |
 | `src/audio.js` | engine node (AudioWorklet or main-thread fallback), output route, play/pause |
 | `src/position.js` | GPS, manual and demo-walk sources |
+| `src/map.js` | map for the Manual source (OpenStreetMap tiles, pan / pinch / tap, no library) |
 | `src/geo.js` | position to seed (cells, hysteresis, rate limit) and speed estimate |
 | `src/tempo.js`, `bar.js`, `banner.js`, `controls.js`, `viz.js`, `wakelock.js` | tempo/BPM slider, per-bar readout, GPS banner, chips, spectrum, wake lock |
 | `src/version.js` | app version shown in the footer |

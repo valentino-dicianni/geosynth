@@ -259,6 +259,52 @@ ok('volume and audio-route controls work');
   w.document.querySelector('#leadChips [data-lead="auto"]').click();
   assert.equal(leads().at(-1).patch, null);
   ok('lead instrument picker sends the patch and its range, and remembers the choice');
+
+  // Key / scale controls
+  const tones = () => log.messages.filter((m) => m.type === 'tone');
+  assert.deepEqual(tones().at(0), { type: 'tone', key: -1, scale: 'auto', quarter: true }, 'start sends the default tonality');
+  assert.equal($('keyChips').children.length, 13);
+  assert.ok($('scaleChips').children.length >= 13);
+  assert.ok([...$('scaleChips').children].some((b) => b.textContent === 'rast ½' && b.dataset.v === 'rast'));
+  w.document.querySelector('#keyChips [data-v="9"]').click();
+  w.document.querySelector('#scaleChips [data-v="bayati"]').click();
+  assert.deepEqual(tones().at(-1), { type: 'tone', key: 9, scale: 'bayati', quarter: true });
+  $('quarter').checked = false;
+  $('quarter').dispatchEvent(new w.Event('change'));
+  assert.deepEqual(tones().at(-1), { type: 'tone', key: 9, scale: 'bayati', quarter: false });
+  assert.equal(w.document.querySelector('#scaleChips [data-v="bayati"]').getAttribute('aria-pressed'), 'true');
+  assert.equal(w.document.querySelector('#keyChips [data-v="9"]').getAttribute('aria-pressed'), 'true');
+  assert.equal(JSON.parse(w.localStorage.getItem('geosynth.toneScale')), 'bayati');
+  FakeWorkletNode.last.port.onmessage({ data: { type: 'bar', info: { style: 2, styleName: 'Pulse', key: 'A', scale: 'procedural', scaleSteps: [1, 2.5, 1.5, 2, 2, 2, 1], micro: true, bpm: 100 }, layers: {} } });
+  assert.match($('toneNow').textContent, /^Here: A procedural \(steps 1 · 2\.5 · 1\.5 · 2 · 2 · 2 · 1\), with quarter tones$/);
+  w.document.querySelector('#keyChips [data-v="-1"]').click();
+  w.document.querySelector('#scaleChips [data-v="auto"]').click();
+  $('quarter').checked = true;
+  $('quarter').dispatchEvent(new w.Event('change'));
+  assert.deepEqual(tones().at(-1), { type: 'tone', key: -1, scale: 'auto', quarter: true });
+  ok('key / scale / quarter-tone controls send the tonality, remember it and show the scale in use');
+
+  // Map in Manual mode: tapping picks the place
+  assert.equal($('manualPanel').hidden, false);
+  const seedsBefore = seeds().length;
+  const map = $('map');
+  const fire = (type, x, y, t) => {
+    const e = new w.MouseEvent(type, { clientX: x, clientY: y, bubbles: true, cancelable: true });
+    Object.defineProperty(e, 'pointerId', { value: 1 });
+    Object.defineProperty(e, 'timeStamp', { value: t });
+    map.dispatchEvent(e);
+  };
+  $('latIn').value = '10';
+  $('lonIn').value = '20';
+  $('applyPos').click();
+  fire('pointerdown', 0, 0, 100);
+  fire('pointerup', 0, 0, 200);
+  assert.ok(Math.abs(parseFloat($('latIn').value) - 10) < 1e-4 && Math.abs(parseFloat($('lonIn').value) - 20) < 1e-4, 'a tap on the map centre keeps the centre coordinates');
+  assert.ok(seeds().length > seedsBefore, 'the tap posts a seed');
+  assert.equal($('mapPin').hidden, false);
+  const store = JSON.parse(w.localStorage.getItem('geosynth.manual'));
+  assert.ok(Math.abs(store[0] - 10) < 1e-4);
+  ok('map: a tap picks the place (inputs, saved place, seed) and shows the pin');
 }
 
 console.log(`\nDOM smoke test passed (${n} checks)`);

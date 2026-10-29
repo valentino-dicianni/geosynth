@@ -22,6 +22,9 @@ export const state = {
   speed: new SpeedTracker(),
   tempoFollow: true,
   leadInst: 'procedural',
+  toneKey: -1, // -1: from the place, 0..11: fixed
+  toneScale: 'auto', // 'auto' | 'procedural' | a name in SCALES
+  quarter: true, // allow quarter tones in Auto / Procedural
   lastFactor: -1,
   speedTimer: null,
   gpsFixAt: null, // performance.now() of the last live GPS fix (null: none yet)

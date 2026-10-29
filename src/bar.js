@@ -19,6 +19,9 @@ export function onWorkletMessage(ev) {
   }
   const leadNow = info.leadName ? `Instrument here: ${info.leadName}` : '';
   if ($('leadNow').textContent !== leadNow) $('leadNow').textContent = leadNow;
+  const steps = info.scaleSteps ? ` (steps ${info.scaleSteps.join(' · ')})` : '';
+  const toneNow = `Here: ${info.key} ${info.scale}${steps}${info.micro ? ', with quarter tones' : ''}`;
+  if ($('toneNow').textContent !== toneNow) $('toneNow').textContent = toneNow;
   const key = `${info.styleName}|${info.key}|${info.scale}`;
   if (key !== state.lastInfoKey) {
     state.lastInfoKey = key;

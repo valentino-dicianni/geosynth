@@ -123,3 +123,35 @@ footer { text-align: center; color: var(--dim); font-size: 0.75rem; padding-top:
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
+
+/* Map (Manual source) */
+.map {
+  position: relative;
+  height: 280px;
+  margin-top: 10px;
+  overflow: hidden;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: #10151f;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: crosshair;
+}
+.map-tiles { position: absolute; inset: 0; }
+.map-tile { position: absolute; max-width: none; pointer-events: none; filter: brightness(0.82) contrast(1.05) saturate(0.9); }
+.map-pin {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  margin: -9px 0 0 -9px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 3px solid #fff;
+  box-shadow: 0 0 0 2px #0008, 0 2px 8px #000a;
+  pointer-events: none;
+}
+.map-zoom { position: absolute; right: 8px; top: 8px; display: grid; gap: 6px; }
+.map-zoom button { width: 40px; min-height: 40px; padding: 0; font-size: 1.3rem; line-height: 1; }
+.map-note { position: absolute; left: 8px; right: 60px; top: 8px; padding: 6px 8px; font-size: 0.8rem; color: var(--text); background: #000b; border-radius: 8px; }
+.map-credit { position: absolute; left: 0; bottom: 0; padding: 1px 6px; font-size: 0.7rem; color: #111; background: #fffa; text-decoration: none; }

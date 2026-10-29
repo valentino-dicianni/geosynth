@@ -7,7 +7,8 @@ import { updateBanner } from './banner.js';
 import { PLACEHOLDER, applyRoute, sendSeed, setPlaying, startAudio } from './audio.js';
 import { applyManual, setSource } from './position.js';
 import { clampBpm, sendBpm, showBpm, speedTick } from './tempo.js';
-import { buildLeadChips, buildPresets, buildStyleChips, setLeadInstrument } from './controls.js';
+import { buildLeadChips, buildPresets, buildStyleChips, buildToneChips, sendTone, setLeadInstrument, setQuarter } from './controls.js';
+import { initMap } from './map.js';
 import { startViz } from './viz.js';
 import { updateWakeLock } from './wakelock.js';
 
@@ -29,6 +30,7 @@ async function onStart() {
   startViz();
   sendSeed(PLACEHOLDER); // sound immediately; replaced when a position arrives
   setLeadInstrument(state.leadInst);
+  sendTone();
   sendBpm();
   state.lastFactor = -2;
   speedTick();
@@ -52,6 +54,9 @@ function restoreSettings() {
   state.route = load('route', isIOS() ? 'direct' : 'element');
   state.tempoFollow = load('tempoFollow', true);
   state.leadInst = load('leadPick', 'procedural');
+  state.toneKey = Number(load('toneKey', -1));
+  state.toneScale = String(load('toneScale', 'auto'));
+  state.quarter = load('quarter', true) !== false;
   $('tempoFollow').checked = state.tempoFollow;
   state.bpm = clampBpm(Number(load('bpm', 120)) || 120);
   state.bpmManual = load('bpmManual', false) === true;
@@ -115,6 +120,7 @@ function wirePlayerControls() {
     updateBanner();
   });
   $('wake').addEventListener('change', updateWakeLock);
+  $('quarter').addEventListener('change', (e) => setQuarter(e.target.checked));
   $('route').addEventListener('change', async (e) => {
     state.route = e.target.value;
     save('route', state.route);
@@ -161,9 +167,15 @@ function init() {
   restoreSettings();
   buildStyleChips();
   buildLeadChips();
+  buildToneChips();
   buildPresets();
   wireTempoControls();
   wirePlayerControls();
+  initMap((lat, lon) => {
+    $('latIn').value = lat.toFixed(5);
+    $('lonIn').value = lon.toFixed(5);
+    applyManual();
+  });
   detectCapabilities();
   updateBanner();
   $('version').textContent = 'v' + VERSION;

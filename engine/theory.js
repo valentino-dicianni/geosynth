@@ -10,7 +10,19 @@ export const SCALES = {
   mixolydian: [0, 2, 4, 5, 7, 9, 10],
   aeolian: [0, 2, 3, 5, 7, 8, 10],
   harmonicMinor: [0, 2, 3, 5, 7, 8, 11],
+  // Quarter-tone scales (maqam-like, 24-EDO): a .5 is a quarter tone, i.e. a
+  // pitch halfway between two piano keys.
+  rast: [0, 2, 3.5, 5, 7, 9, 10.5],
+  bayati: [0, 1.5, 3, 5, 7, 8, 10],
+  saba: [0, 1.5, 3, 4, 6, 8, 10],
+  neutral: [0, 2, 3.5, 5, 7, 8.5, 10.5],
 };
+
+// The quarter-tone scales above, in the order the Auto pick chooses among them.
+export const MICRO_NAMES = ['rast', 'bayati', 'saba', 'neutral'];
+
+// Scales whose melodies may use the five-note subset when a style asks for it.
+export const PENT_OK = ['ionian', 'lydian', 'mixolydian', 'dorian', 'aeolian', 'phrygian'];
 
 export const PENT = {
   major: [0, 2, 4, 7, 9],
@@ -27,6 +39,10 @@ export const SCALE_INFO = {
   aeolian: { mat: 'minor', favor: {} },
   phrygian: { mat: 'minor', favor: { 1: 2.6 } },
   harmonicMinor: { mat: 'minor', favor: { 4: 1.8 } },
+  rast: { mat: 'major', favor: { 3: 1.6 } },
+  bayati: { mat: 'minor', favor: { 1: 1.6 } },
+  saba: { mat: 'minor', favor: { 1: 2.2 } },
+  neutral: { mat: 'minor', favor: { 2: 1.5 } },
 };
 
 // Row = from-degree, column = to-degree (0..6).
@@ -92,6 +108,51 @@ export function chordTones(scale, d, opts) {
   return idxs.map((i) => scaleNote(scale, i));
 }
 
+// A new 7-note scale invented from a seed. Steps are counted in quarter tones
+// (2 = one semitone) and add up to an octave (24). `quarter` allows odd step
+// sizes (quarter tones) and at least one is used; without it only whole
+// semitones are used. The tonic
+// triad is kept usable: third between a minor and a major third (neutral
+// thirds included), fifth within a quarter tone of perfect.
+// Returns { scale (semitones, may contain .5), steps (semitones), info }.
+export function makeProceduralScale(rng, quarter) {
+  const unit = quarter ? 1 : 2;
+  for (let tries = 0; tries < 80; tries++) {
+    const q = [];
+    let sum = 0;
+    for (let i = 0; i < 7; i++) {
+      const v = 2 + unit * rng.below(Math.floor(4 / unit) + 1); // 2..6 (even only without quarter)
+      q.push(v);
+      sum += v;
+    }
+    let guard = 0;
+    while (sum !== 24 && guard++ < 200) {
+      const i = rng.below(7);
+      if (sum > 24 && q[i] - unit >= 2) {
+        q[i] -= unit;
+        sum -= unit;
+      } else if (sum < 24 && q[i] + unit <= 6) {
+        q[i] += unit;
+        sum += unit;
+      }
+    }
+    if (sum !== 24) continue;
+    const pos = [0];
+    for (let i = 0; i < 6; i++) pos.push(pos[i] + q[i]);
+    const third = pos[2];
+    const fifth = pos[4];
+    if (third < 6 || third > 8 || fifth < 13 || fifth > 15) continue;
+    if (q.filter((x) => x === 6).length > 1) continue;
+    if (quarter && !q.some((x) => x % 2 === 1)) continue; // with quarter tones on, use at least one
+    return {
+      scale: pos.map((x) => x / 2),
+      steps: q.map((x) => x / 2),
+      info: { mat: third >= 8 ? 'major' : 'minor', favor: {} },
+    };
+  }
+  return { scale: SCALES.dorian, steps: [1, 0.5, 1, 1, 1, 0.5, 1].map((x) => x * 2), info: SCALE_INFO.dorian };
+}
+
 // Fold a pitch into [lo, lo + 12).
 export function fold(midi, lo) {
   while (midi < lo) midi += 12;
@@ -100,8 +161,9 @@ export function fold(midi, lo) {
 }
 
 // Markov progression of `len` degrees.
+// `scaleName` is a key of SCALE_INFO or an info object ({ mat, favor }).
 export function makeProgression(rng, scaleName, len, stay, startDegrees) {
-  const info = SCALE_INFO[scaleName];
+  const info = typeof scaleName === 'string' ? SCALE_INFO[scaleName] : scaleName;
   const mat = MATRIX[info.mat];
   const prog = [];
   let cur = rng.pick(startDegrees);

@@ -6,6 +6,7 @@ import { save } from './store.js';
 import { state } from './state.js';
 import { updateBanner } from './banner.js';
 import { sendSeed } from './audio.js';
+import { mapSetPin, mapShow } from './map.js';
 
 
 // Rate limits per source. GPS: while driving, a new style at most every 15 s
@@ -88,6 +89,7 @@ export function applyManual() {
   }
   setStatus('');
   save('manual', [lat, lon]);
+  mapSetPin(lat, lon);
   onFix(lat, lon, 0);
 }
 
@@ -121,6 +123,7 @@ export function setSource(src, persist = true) {
     b.setAttribute('aria-checked', String(b.dataset.src === src));
   }
   $('manualPanel').hidden = src !== 'manual';
+  if (src === 'manual') mapShow(parseFloat($('latIn').value), parseFloat($('lonIn').value));
   $('demoPanel').hidden = src !== 'demo';
   updateBanner();
   if (!state.node) return;

@@ -13,6 +13,10 @@ import {
   PENT,
   STYLES,
   NOTE_NAMES,
+  MICRO_NAMES,
+  PENT_OK,
+  SCALE_INFO,
+  makeProceduralScale,
   scaleNote,
   nearestIdx,
   chordTones,
@@ -39,6 +43,8 @@ export class Composer {
     this.barCount = 0;
     this.leadOv = null;
     this.leadProc = false;
+    this.tone = { key: -1, scale: 'auto', quarter: true };
+    this.lastIn = null; // the seed the current song was latched from
     this.tempoFactor = null;
     this.tempoOv = null;
     this.curBpm = null;
@@ -71,6 +77,21 @@ export class Composer {
     this.curBpm = this.tempoOv;
   }
 
+  // Tonality chosen by hand. key: -1 (from the place) or 0..11. scale: 'auto'
+  // (the place decides, sometimes inventing a scale or using quarter tones),
+  // 'procedural' (a scale invented for this place) or any name in SCALES.
+  // quarter: allow quarter tones in the automatic and procedural choices.
+  // Applies at the next bar line by re-latching the current place.
+  setTone(key, scale, quarter) {
+    const k = Number.isInteger(key) && key >= 0 && key < 12 ? key : -1;
+    const sc = scale === 'procedural' || (typeof scale === 'string' && Object.prototype.hasOwnProperty.call(SCALES, scale)) ? scale : 'auto';
+    const q = quarter !== false;
+    const t = this.tone;
+    if (t.key === k && t.scale === sc && t.quarter === q) return;
+    this.tone = { key: k, scale: sc, quarter: q };
+    if (this.lastIn && !this.pending) this.pending = this.lastIn;
+  }
+
   // Force the lead line on (the user picked a lead instrument) and keep it in
   // that instrument's range. ov = { lo, hi } midi notes, or null for the
   // style's own arrangement.
@@ -93,6 +114,8 @@ export class Composer {
       styleName: s.style.name,
       key: NOTE_NAMES[s.pc],
       scale: s.scaleName,
+      scaleSteps: s.scaleSteps,
+      micro: s.scale.some((x) => x !== Math.floor(x)),
       bpm: this.curBpm === null ? s.bpm : this.curBpm,
     };
   }
@@ -134,8 +157,33 @@ export class Composer {
     const kr = stream(seed.coarse, 11);
     s.pc = kr.below(12);
     s.scaleName = style.scales[kr.below(style.scales.length)];
-    s.scale = SCALES[s.scaleName];
-    if (style.pent && s.scaleName !== 'harmonicMinor') {
+    // Tonality: the style's own modes, unless the place (or the user) picks a
+    // quarter-tone or an invented scale. Own PRNG streams, so the draws above
+    // stay as they were.
+    const tone = this.tone;
+    if (tone.key >= 0) s.pc = tone.key;
+    const tr = stream(seed.coarse, 903);
+    const roll = tr.float();
+    const microPick = MICRO_NAMES[tr.below(MICRO_NAMES.length)];
+    let want = tone.scale;
+    if (want === 'auto') {
+      want = s.scaleName;
+      if (roll < 0.22) want = 'procedural';
+      else if (tone.quarter && roll < 0.38) want = microPick;
+    }
+    s.scaleSteps = null;
+    s.scaleInfo = SCALE_INFO[want];
+    if (want === 'procedural') {
+      const ps = makeProceduralScale(stream(seed.coarse, 904), tone.quarter);
+      s.scaleName = 'procedural';
+      s.scale = ps.scale;
+      s.scaleSteps = ps.steps;
+      s.scaleInfo = ps.info;
+    } else {
+      s.scaleName = want;
+      s.scale = SCALES[want];
+    }
+    if (style.pent && PENT_OK.includes(s.scaleName)) {
       const major = ['ionian', 'lydian', 'mixolydian'].includes(s.scaleName);
       s.melScale = major ? PENT.major : PENT.minor;
     } else {
@@ -162,7 +210,7 @@ export class Composer {
     const keepProg = s.sectionIdx > 0 && r.chance(0.4);
     const pr = stream(secSeed, 2);
     if (!keepProg) {
-      s.prog = makeProgression(pr, s.scaleName, 4, style.stay, style.starts);
+      s.prog = makeProgression(pr, s.scaleInfo, 4, style.stay, style.starts);
     }
     if (!(s.sectionIdx > 0 && r.chance(0.5))) s.motifSeed = stream(secSeed, 3).next();
     s.answer = r.chance(0.6);
@@ -225,6 +273,7 @@ export class Composer {
 
   nextBar() {
     if (this.pending) {
+      this.lastIn = this.pending;
       this._latch(this.pending);
       this.pending = null;
       this.barCount = 0;

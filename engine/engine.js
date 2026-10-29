@@ -116,6 +116,11 @@ export class Engine {
     }
   }
 
+  // Key / scale / quarter-tone choice (see Composer.setTone).
+  setTone(key, scale, quarter) {
+    this.composer.setTone(key, scale, quarter);
+  }
+
   // Replace the lead voice with a named patch (and force the lead line on,
   // in that instrument's range). name = null restores the style's own lead.
   setLeadPatch(name, lo, hi) {

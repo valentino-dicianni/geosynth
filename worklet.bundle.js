@@ -103,7 +103,19 @@ const SCALES = {
   mixolydian: [0, 2, 4, 5, 7, 9, 10],
   aeolian: [0, 2, 3, 5, 7, 8, 10],
   harmonicMinor: [0, 2, 3, 5, 7, 8, 11],
+  // Quarter-tone scales (maqam-like, 24-EDO): a .5 is a quarter tone, i.e. a
+  // pitch halfway between two piano keys.
+  rast: [0, 2, 3.5, 5, 7, 9, 10.5],
+  bayati: [0, 1.5, 3, 5, 7, 8, 10],
+  saba: [0, 1.5, 3, 4, 6, 8, 10],
+  neutral: [0, 2, 3.5, 5, 7, 8.5, 10.5],
 };
+
+// The quarter-tone scales above, in the order the Auto pick chooses among them.
+const MICRO_NAMES = ['rast', 'bayati', 'saba', 'neutral'];
+
+// Scales whose melodies may use the five-note subset when a style asks for it.
+const PENT_OK = ['ionian', 'lydian', 'mixolydian', 'dorian', 'aeolian', 'phrygian'];
 
 const PENT = {
   major: [0, 2, 4, 7, 9],
@@ -120,6 +132,10 @@ const SCALE_INFO = {
   aeolian: { mat: 'minor', favor: {} },
   phrygian: { mat: 'minor', favor: { 1: 2.6 } },
   harmonicMinor: { mat: 'minor', favor: { 4: 1.8 } },
+  rast: { mat: 'major', favor: { 3: 1.6 } },
+  bayati: { mat: 'minor', favor: { 1: 1.6 } },
+  saba: { mat: 'minor', favor: { 1: 2.2 } },
+  neutral: { mat: 'minor', favor: { 2: 1.5 } },
 };
 
 // Row = from-degree, column = to-degree (0..6).
@@ -185,6 +201,51 @@ function chordTones(scale, d, opts) {
   return idxs.map((i) => scaleNote(scale, i));
 }
 
+// A new 7-note scale invented from a seed. Steps are counted in quarter tones
+// (2 = one semitone) and add up to an octave (24). `quarter` allows odd step
+// sizes (quarter tones) and at least one is used; without it only whole
+// semitones are used. The tonic
+// triad is kept usable: third between a minor and a major third (neutral
+// thirds included), fifth within a quarter tone of perfect.
+// Returns { scale (semitones, may contain .5), steps (semitones), info }.
+function makeProceduralScale(rng, quarter) {
+  const unit = quarter ? 1 : 2;
+  for (let tries = 0; tries < 80; tries++) {
+    const q = [];
+    let sum = 0;
+    for (let i = 0; i < 7; i++) {
+      const v = 2 + unit * rng.below(Math.floor(4 / unit) + 1); // 2..6 (even only without quarter)
+      q.push(v);
+      sum += v;
+    }
+    let guard = 0;
+    while (sum !== 24 && guard++ < 200) {
+      const i = rng.below(7);
+      if (sum > 24 && q[i] - unit >= 2) {
+        q[i] -= unit;
+        sum -= unit;
+      } else if (sum < 24 && q[i] + unit <= 6) {
+        q[i] += unit;
+        sum += unit;
+      }
+    }
+    if (sum !== 24) continue;
+    const pos = [0];
+    for (let i = 0; i < 6; i++) pos.push(pos[i] + q[i]);
+    const third = pos[2];
+    const fifth = pos[4];
+    if (third < 6 || third > 8 || fifth < 13 || fifth > 15) continue;
+    if (q.filter((x) => x === 6).length > 1) continue;
+    if (quarter && !q.some((x) => x % 2 === 1)) continue; // with quarter tones on, use at least one
+    return {
+      scale: pos.map((x) => x / 2),
+      steps: q.map((x) => x / 2),
+      info: { mat: third >= 8 ? 'major' : 'minor', favor: {} },
+    };
+  }
+  return { scale: SCALES.dorian, steps: [1, 0.5, 1, 1, 1, 0.5, 1].map((x) => x * 2), info: SCALE_INFO.dorian };
+}
+
 // Fold a pitch into [lo, lo + 12).
 function fold(midi, lo) {
   while (midi < lo) midi += 12;
@@ -193,8 +254,9 @@ function fold(midi, lo) {
 }
 
 // Markov progression of `len` degrees.
+// `scaleName` is a key of SCALE_INFO or an info object ({ mat, favor }).
 function makeProgression(rng, scaleName, len, stay, startDegrees) {
-  const info = SCALE_INFO[scaleName];
+  const info = typeof scaleName === 'string' ? SCALE_INFO[scaleName] : scaleName;
   const mat = MATRIX[info.mat];
   const prog = [];
   let cur = rng.pick(startDegrees);
@@ -1247,6 +1309,8 @@ class Composer {
     this.barCount = 0;
     this.leadOv = null;
     this.leadProc = false;
+    this.tone = { key: -1, scale: 'auto', quarter: true };
+    this.lastIn = null; // the seed the current song was latched from
     this.tempoFactor = null;
     this.tempoOv = null;
     this.curBpm = null;
@@ -1279,6 +1343,21 @@ class Composer {
     this.curBpm = this.tempoOv;
   }
 
+  // Tonality chosen by hand. key: -1 (from the place) or 0..11. scale: 'auto'
+  // (the place decides, sometimes inventing a scale or using quarter tones),
+  // 'procedural' (a scale invented for this place) or any name in SCALES.
+  // quarter: allow quarter tones in the automatic and procedural choices.
+  // Applies at the next bar line by re-latching the current place.
+  setTone(key, scale, quarter) {
+    const k = Number.isInteger(key) && key >= 0 && key < 12 ? key : -1;
+    const sc = scale === 'procedural' || (typeof scale === 'string' && Object.prototype.hasOwnProperty.call(SCALES, scale)) ? scale : 'auto';
+    const q = quarter !== false;
+    const t = this.tone;
+    if (t.key === k && t.scale === sc && t.quarter === q) return;
+    this.tone = { key: k, scale: sc, quarter: q };
+    if (this.lastIn && !this.pending) this.pending = this.lastIn;
+  }
+
   // Force the lead line on (the user picked a lead instrument) and keep it in
   // that instrument's range. ov = { lo, hi } midi notes, or null for the
   // style's own arrangement.
@@ -1301,6 +1380,8 @@ class Composer {
       styleName: s.style.name,
       key: NOTE_NAMES[s.pc],
       scale: s.scaleName,
+      scaleSteps: s.scaleSteps,
+      micro: s.scale.some((x) => x !== Math.floor(x)),
       bpm: this.curBpm === null ? s.bpm : this.curBpm,
     };
   }
@@ -1342,8 +1423,33 @@ class Composer {
     const kr = stream(seed.coarse, 11);
     s.pc = kr.below(12);
     s.scaleName = style.scales[kr.below(style.scales.length)];
-    s.scale = SCALES[s.scaleName];
-    if (style.pent && s.scaleName !== 'harmonicMinor') {
+    // Tonality: the style's own modes, unless the place (or the user) picks a
+    // quarter-tone or an invented scale. Own PRNG streams, so the draws above
+    // stay as they were.
+    const tone = this.tone;
+    if (tone.key >= 0) s.pc = tone.key;
+    const tr = stream(seed.coarse, 903);
+    const roll = tr.float();
+    const microPick = MICRO_NAMES[tr.below(MICRO_NAMES.length)];
+    let want = tone.scale;
+    if (want === 'auto') {
+      want = s.scaleName;
+      if (roll < 0.22) want = 'procedural';
+      else if (tone.quarter && roll < 0.38) want = microPick;
+    }
+    s.scaleSteps = null;
+    s.scaleInfo = SCALE_INFO[want];
+    if (want === 'procedural') {
+      const ps = makeProceduralScale(stream(seed.coarse, 904), tone.quarter);
+      s.scaleName = 'procedural';
+      s.scale = ps.scale;
+      s.scaleSteps = ps.steps;
+      s.scaleInfo = ps.info;
+    } else {
+      s.scaleName = want;
+      s.scale = SCALES[want];
+    }
+    if (style.pent && PENT_OK.includes(s.scaleName)) {
       const major = ['ionian', 'lydian', 'mixolydian'].includes(s.scaleName);
       s.melScale = major ? PENT.major : PENT.minor;
     } else {
@@ -1370,7 +1476,7 @@ class Composer {
     const keepProg = s.sectionIdx > 0 && r.chance(0.4);
     const pr = stream(secSeed, 2);
     if (!keepProg) {
-      s.prog = makeProgression(pr, s.scaleName, 4, style.stay, style.starts);
+      s.prog = makeProgression(pr, s.scaleInfo, 4, style.stay, style.starts);
     }
     if (!(s.sectionIdx > 0 && r.chance(0.5))) s.motifSeed = stream(secSeed, 3).next();
     s.answer = r.chance(0.6);
@@ -1433,6 +1539,7 @@ class Composer {
 
   nextBar() {
     if (this.pending) {
+      this.lastIn = this.pending;
       this._latch(this.pending);
       this.pending = null;
       this.barCount = 0;
@@ -2103,6 +2210,11 @@ class Engine {
     }
   }
 
+  // Key / scale / quarter-tone choice (see Composer.setTone).
+  setTone(key, scale, quarter) {
+    this.composer.setTone(key, scale, quarter);
+  }
+
   // Replace the lead voice with a named patch (and force the lead line on,
   // in that instrument's range). name = null restores the style's own lead.
   setLeadPatch(name, lo, hi) {
@@ -2338,6 +2450,7 @@ class GeoSynthProcessor extends AudioWorkletProcessor {
       else if (m.type === 'volume') this.engine.setVolume(m.value);
       else if (m.type === 'tempo') this.engine.setTempoFactor(m.factor);
       else if (m.type === 'bpm') this.engine.setTempoOverride(m.bpm);
+      else if (m.type === 'tone') this.engine.setTone(m.key, m.scale, m.quarter);
       else if (m.type === 'lead') this.engine.setLeadPatch(m.patch, m.lo, m.hi);
     };
     this.port.postMessage({ type: 'ready', sampleRate });

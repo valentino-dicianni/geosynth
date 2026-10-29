@@ -1,5 +1,5 @@
 // Chip buttons: styles, lead instruments, city presets.
-import { STYLES } from '../engine/theory.js';
+import { STYLES, SCALES, NOTE_NAMES } from '../engine/theory.js';
 import { LEAD_INSTRUMENTS } from '../engine/patches.js';
 import { $ } from './dom.js';
 import { save } from './store.js';
@@ -75,4 +75,68 @@ export function buildPresets() {
     });
     wrap.appendChild(b);
   }
+}
+
+// --- Key and scale ---------------------------------------------------------
+
+export function sendTone() {
+  if (state.node) {
+    state.node.port.postMessage({ type: 'tone', key: state.toneKey, scale: state.toneScale, quarter: state.quarter });
+  }
+}
+
+function pressChips(wrap, match) {
+  for (const c of wrap.children) c.setAttribute('aria-pressed', String(match(c)));
+}
+
+export function buildToneChips() {
+  const keys = $('keyChips');
+  const scales = $('scaleChips');
+  keys.textContent = '';
+  scales.textContent = '';
+  const mk = (wrap, label, value, title, onPick) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = label;
+    b.title = title || '';
+    b.dataset.v = String(value);
+    b.addEventListener('click', onPick);
+    wrap.appendChild(b);
+  };
+  mk(keys, 'Auto key', -1, 'Let the place choose', () => setKey(-1));
+  NOTE_NAMES.forEach((n, i) => mk(keys, n, i, '', () => setKey(i)));
+  mk(scales, 'Auto scale', 'auto', 'Let the place choose', () => setScale('auto'));
+  mk(scales, 'Procedural', 'procedural', 'A scale invented for this place', () => setScale('procedural'));
+  for (const name of Object.keys(SCALES)) {
+    const micro = SCALES[name].some((x) => x !== Math.floor(x));
+    mk(scales, micro ? name + ' ½' : name, name, micro ? 'Contains quarter tones' : '', () => setScale(name));
+  }
+  refreshToneChips();
+}
+
+export function refreshToneChips() {
+  pressChips($('keyChips'), (c) => Number(c.dataset.v) === state.toneKey);
+  pressChips($('scaleChips'), (c) => c.dataset.v === state.toneScale);
+  $('quarter').checked = state.quarter;
+}
+
+export function setKey(k) {
+  state.toneKey = k;
+  save('toneKey', k);
+  refreshToneChips();
+  sendTone();
+}
+
+export function setScale(sc) {
+  state.toneScale = sc;
+  save('toneScale', sc);
+  refreshToneChips();
+  sendTone();
+}
+
+export function setQuarter(on) {
+  state.quarter = !!on;
+  save('quarter', state.quarter);
+  refreshToneChips();
+  sendTone();
 }
