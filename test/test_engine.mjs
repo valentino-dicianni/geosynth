@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { Engine } from '../engine/engine.js';
 import { Composer } from '../engine/composer.js';
-import { STYLES, MICRO_NAMES, SCALES, makeProceduralScale } from '../engine/theory.js';
+import { STYLES, MICRO_NAMES, MINOR_EXTRA, SCALES, SCALE_INFO, scaleLabel, makeProceduralScale } from '../engine/theory.js';
 import { PATCHES, LEAD_INSTRUMENTS } from '../engine/patches.js';
 import { SynthVoice } from '../engine/voices.js';
 import { makeInstrument } from '../engine/instrument.js';
@@ -449,6 +449,41 @@ check('engine: Procedural / named lead / Auto switch each other off, and procedu
     const st = stats(L, R, SR * 2, 20 * SR);
     assert.equal(st.bad, 0);
     assert.ok(st.peak <= 1.0 && st.rmsDb > -38 && st.rmsDb < -8, `${STYLES[si].name}: peak ${st.peak} rms ${st.rmsDb}`);
+  }
+});
+
+check('every named scale: 7 ascending notes in one octave, chord matrix defined; extra minor scales are minor-side', () => {
+  for (const [name, sc] of Object.entries(SCALES)) {
+    assert.equal(sc.length, 7, name);
+    assert.equal(sc[0], 0);
+    for (let i = 1; i < 7; i++) assert.ok(sc[i] > sc[i - 1] && sc[i] < 12, name);
+    assert.ok(SCALE_INFO[name] && ['major', 'minor'].includes(SCALE_INFO[name].mat), name);
+  }
+  assert.equal(MINOR_EXTRA.length, 6);
+  for (const n of MINOR_EXTRA) assert.ok(SCALES[n][2] === 3 && SCALE_INFO[n].mat === 'minor', n + ' has a minor third');
+  assert.equal(scaleLabel('harmonicMinor'), 'harmonic minor');
+  assert.equal(scaleLabel('dorianB2'), 'dorian b2');
+});
+
+check('extra minor scales: Auto uses them only in minor-mode places, every one appears, and each renders audibly when picked', () => {
+  const seen = {};
+  for (let n = 0; n < 1500; n++) {
+    const c = new Composer();
+    c.setSeed({ style: -1, coarse: n * 104729 + 7, fine: 1 });
+    c.nextBar();
+    const i = c.info();
+    if (MINOR_EXTRA.includes(i.scale)) seen[i.scale] = (seen[i.scale] || 0) + 1;
+  }
+  for (const m of MINOR_EXTRA) assert.ok(seen[m] > 5, m + ' appears in Auto: ' + seen[m]);
+  for (const name of MINOR_EXTRA) {
+    const e = new Engine(SR);
+    e.setTone(4, name, true);
+    e.setSeed({ style: 2, coarse: 99, fine: 4 });
+    const { L, R } = render(e, 12);
+    const st = stats(L, R, SR * 2, 12 * SR);
+    assert.equal(st.bad, 0);
+    assert.ok(st.peak <= 1.0 && st.rmsDb > -38 && st.rmsDb < -8, `${name}: peak ${st.peak} rms ${st.rmsDb}`);
+    assert.equal(e.composer.info().scale, name);
   }
 });
 

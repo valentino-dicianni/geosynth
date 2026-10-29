@@ -1,5 +1,5 @@
 // Chip buttons: styles, lead instruments, city presets.
-import { STYLES, SCALES, NOTE_NAMES } from '../engine/theory.js';
+import { STYLES, SCALES, NOTE_NAMES, scaleLabel } from '../engine/theory.js';
 import { LEAD_INSTRUMENTS } from '../engine/patches.js';
 import { $ } from './dom.js';
 import { save } from './store.js';
@@ -109,7 +109,7 @@ export function buildToneChips() {
   mk(scales, 'Procedural', 'procedural', 'A scale invented for this place', () => setScale('procedural'));
   for (const name of Object.keys(SCALES)) {
     const micro = SCALES[name].some((x) => x !== Math.floor(x));
-    mk(scales, micro ? name + ' ½' : name, name, micro ? 'Contains quarter tones' : '', () => setScale(name));
+    mk(scales, micro ? scaleLabel(name) + ' ½' : scaleLabel(name), name, micro ? 'Contains quarter tones' : '', () => setScale(name));
   }
   refreshToneChips();
 }

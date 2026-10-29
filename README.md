@@ -163,12 +163,14 @@ The version (major.minor) lives in `src/version.js` and shows in the footer. Run
   changes). **Hold** freezes the music while you move.
 - **Style:** Auto or pin one of the ten.
 - **Key and scale:** Auto, or fix the key (C to B) and/or the scale. Besides the
-  usual modes there are four quarter-tone scales (rast, bayati, saba, neutral;
+  usual modes (ionian to locrian, harmonic and melodic minor) there are more minor-side scales
+  (dorian b2, neapolitan minor, hungarian minor, ukrainian dorian, locrian) and four quarter-tone scales (rast, bayati, saba, neutral;
   the ½ marks them) and **Procedural**: a 7-note scale invented from the place
   seed. The **Quarter tones** switch lets Auto and Procedural use notes halfway
   between piano keys (24 steps per octave); without it they stay on whole
   semitones. In Auto about a fifth of the places get a procedural scale and
-  about a sixth a quarter-tone one.
+  about a sixth a quarter-tone one; places whose style is in a minor mode also
+  get the extra minor scales now and then.
 - **Manual map:** in Manual mode tap the map to choose the place (drag to move,
   pinch or +/- to zoom). It needs a network for the tiles; without one the map
   stays blank but tapping still works, and so do the Lat/Lon boxes and city

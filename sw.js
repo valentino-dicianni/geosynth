@@ -1,5 +1,5 @@
 // Offline app shell. Bump CACHE when shipping changes so clients refresh.
-const CACHE = 'geosynth-v1.7';
+const CACHE = 'geosynth-v1.8';
 const ASSETS = [
   './',
   'index.html',

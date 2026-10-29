@@ -14,6 +14,7 @@ import {
   STYLES,
   NOTE_NAMES,
   MICRO_NAMES,
+  MINOR_EXTRA,
   PENT_OK,
   SCALE_INFO,
   makeProceduralScale,
@@ -165,11 +166,13 @@ export class Composer {
     const tr = stream(seed.coarse, 903);
     const roll = tr.float();
     const microPick = MICRO_NAMES[tr.below(MICRO_NAMES.length)];
+    const minorPick = MINOR_EXTRA[tr.below(MINOR_EXTRA.length)];
     let want = tone.scale;
     if (want === 'auto') {
       want = s.scaleName;
       if (roll < 0.22) want = 'procedural';
       else if (tone.quarter && roll < 0.38) want = microPick;
+      else if (roll >= 0.38 && roll < 0.52 && SCALE_INFO[s.scaleName].mat === 'minor') want = minorPick;
     }
     s.scaleSteps = null;
     s.scaleInfo = SCALE_INFO[want];

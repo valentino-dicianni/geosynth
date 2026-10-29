@@ -10,6 +10,13 @@ export const SCALES = {
   mixolydian: [0, 2, 4, 5, 7, 9, 10],
   aeolian: [0, 2, 3, 5, 7, 8, 10],
   harmonicMinor: [0, 2, 3, 5, 7, 8, 11],
+  // More minor-side scales
+  melodicMinor: [0, 2, 3, 5, 7, 9, 11],
+  dorianB2: [0, 1, 3, 5, 7, 9, 10],
+  neapolitanMinor: [0, 1, 3, 5, 7, 8, 11],
+  hungarianMinor: [0, 2, 3, 6, 7, 8, 11],
+  ukrainianDorian: [0, 2, 3, 6, 7, 9, 10],
+  locrian: [0, 1, 3, 5, 6, 8, 10],
   // Quarter-tone scales (maqam-like, 24-EDO): a .5 is a quarter tone, i.e. a
   // pitch halfway between two piano keys.
   rast: [0, 2, 3.5, 5, 7, 9, 10.5],
@@ -18,11 +25,20 @@ export const SCALES = {
   neutral: [0, 2, 3.5, 5, 7, 8.5, 10.5],
 };
 
+// The extra minor-side scales above; Auto uses them only where the style's
+// own mode is minor, so major-leaning places stay major.
+export const MINOR_EXTRA = ['melodicMinor', 'dorianB2', 'neapolitanMinor', 'hungarianMinor', 'ukrainianDorian', 'locrian'];
+
 // The quarter-tone scales above, in the order the Auto pick chooses among them.
 export const MICRO_NAMES = ['rast', 'bayati', 'saba', 'neutral'];
 
 // Scales whose melodies may use the five-note subset when a style asks for it.
 export const PENT_OK = ['ionian', 'lydian', 'mixolydian', 'dorian', 'aeolian', 'phrygian'];
+
+// Display name of a scale key: harmonicMinor -> "harmonic minor".
+export function scaleLabel(name) {
+  return name.replace(/([A-Z])/g, ' $1').toLowerCase();
+}
 
 export const PENT = {
   major: [0, 2, 4, 7, 9],
@@ -39,6 +55,12 @@ export const SCALE_INFO = {
   aeolian: { mat: 'minor', favor: {} },
   phrygian: { mat: 'minor', favor: { 1: 2.6 } },
   harmonicMinor: { mat: 'minor', favor: { 4: 1.8 } },
+  melodicMinor: { mat: 'minor', favor: { 3: 1.6 } },
+  dorianB2: { mat: 'minor', favor: { 1: 1.8 } },
+  neapolitanMinor: { mat: 'minor', favor: { 1: 2.2, 4: 1.4 } },
+  hungarianMinor: { mat: 'minor', favor: { 3: 1.8, 4: 1.4 } },
+  ukrainianDorian: { mat: 'minor', favor: { 3: 2.0 } },
+  locrian: { mat: 'minor', favor: { 4: 2.0 } },
   rast: { mat: 'major', favor: { 3: 1.6 } },
   bayati: { mat: 'minor', favor: { 1: 1.6 } },
   saba: { mat: 'minor', favor: { 1: 2.2 } },
